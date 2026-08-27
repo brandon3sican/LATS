@@ -19,7 +19,6 @@
     {{-- Keep JS from Vite if needed (optional). If it causes style conflicts, remove app.css --}}
     @vite(['resources/js/app.js'])
 </head>
-@stack('scripts')
 
 <body class="lais-body">
     @include('layouts.partials.topbar')
