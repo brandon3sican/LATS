@@ -1,0 +1,175 @@
+/* ====== LAIS Modern Theme ====== */
+:root{
+  --lais-bg: #f6f8fb;
+  --lais-card: #ffffff;
+  --lais-text: #111827;
+  --lais-muted: #6b7280;
+  --lais-border: #e5e7eb;
+  --lais-primary: #2563eb;
+  --lais-primary-2: #1d4ed8;
+  --lais-sidebar: #0b1220;
+  --lais-sidebar-2: #0f172a;
+  --lais-sidebar-text: #e5e7eb;
+  --lais-sidebar-muted: #93a3b8;
+  --lais-radius: 14px;
+}
+
+.lais-body{
+  background: var(--lais-bg);
+  color: var(--lais-text);
+}
+
+/* Topbar */
+.lais-topbar{
+  background: var(--lais-card);
+  border-bottom: 1px solid var(--lais-border);
+  padding: 10px 12px;
+}
+
+.lais-logo{
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--lais-primary), #60a5fa);
+  color: white;
+}
+
+/* Buttons */
+.lais-icon-btn{
+  border: 1px solid var(--lais-border);
+  background: white;
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+.lais-pill-btn{
+  border-radius: 999px;
+  background: var(--lais-primary);
+  color: #fff;
+  border: 0;
+  padding: 8px 12px;
+}
+.lais-pill-btn:hover{ background: var(--lais-primary-2); color:#fff; }
+
+.lais-user-btn{
+  border: 1px solid var(--lais-border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 8px 12px;
+}
+
+/* Sidebar */
+.lais-sidebar{
+  background: linear-gradient(180deg, var(--lais-sidebar), var(--lais-sidebar-2));
+  min-height: calc(100vh - 58px);
+  padding: 16px 12px;
+  position: sticky;
+  top: 58px;
+}
+
+.lais-sidebar-inner{
+  color: var(--lais-sidebar-text);
+}
+
+.lais-side-user{
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--lais-radius);
+  background: rgba(255,255,255,0.04);
+  margin-bottom: 14px;
+}
+
+.lais-avatar{
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  background: rgba(37,99,235,0.25);
+  color: #c7d2fe;
+  border: 1px solid rgba(255,255,255,0.10);
+}
+
+.lais-nav-section{
+  margin-top: 14px;
+}
+.lais-nav-title{
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--lais-sidebar-muted);
+  padding: 10px 10px 8px;
+}
+
+.lais-nav-link{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding: 10px 10px;
+  margin: 2px 0;
+  border-radius: 12px;
+  color: var(--lais-sidebar-text);
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+.lais-nav-link i{ opacity: .9; }
+.lais-nav-link:hover{
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.08);
+  color: #fff;
+}
+.lais-nav-link.active{
+  background: rgba(37,99,235,0.28);
+  border-color: rgba(37,99,235,0.40);
+  color: #fff;
+}
+
+/* Main */
+.lais-main{
+  padding: 18px;
+}
+.lais-content{
+  min-height: calc(100vh - 58px - 60px);
+}
+.lais-footer{
+  padding: 14px 6px;
+  border-top: 1px dashed var(--lais-border);
+}
+
+/* Cards look more modern */
+.card{
+  border: 1px solid var(--lais-border);
+  border-radius: var(--lais-radius);
+  box-shadow: 0 10px 30px rgba(17,24,39,0.06);
+}
+.card-header{
+  background: #fff !important;
+  border-bottom: 1px solid var(--lais-border);
+  border-top-left-radius: var(--lais-radius) !important;
+  border-top-right-radius: var(--lais-radius) !important;
+}
+
+/* Alerts */
+.lais-alert{
+  border-radius: var(--lais-radius);
+}
+
+/* Offcanvas */
+.lais-offcanvas{
+  background: linear-gradient(180deg, var(--lais-sidebar), var(--lais-sidebar-2));
+  color: var(--lais-sidebar-text);
+}
+.lais-offcanvas .offcanvas-header{
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.lais-offcanvas .btn-close{
+  filter: invert(1);
+}

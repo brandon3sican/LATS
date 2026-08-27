@@ -1,0 +1,210 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Auth;
+use App\Http\Controllers\AttachmentController;
+use App\Http\Controllers\NotificationController;
+
+// Admin Controllers
+use App\Http\Controllers\Admin\ReportController as AdminReportController;
+use App\Http\Controllers\Admin\ApprovalStepController as AdminApprovalStepController;
+use App\Http\Controllers\Admin\EmployeeController as AdminEmployeeController;
+use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
+
+// Employee Controllers
+use App\Http\Controllers\Employee\DashboardController as EmployeeDashboardController;
+use App\Http\Controllers\Employee\LeaveController as EmployeeLeaveController;
+use App\Http\Controllers\Employee\ReportController as EmployeeReportController;
+use App\Http\Controllers\Employee\ProfileController as EmployeeProfileController;
+
+// Approver Controllers
+use App\Http\Controllers\Approver\InboxController as ApproverInboxController;
+use App\Http\Controllers\Approver\LeaveActionController as ApproverLeaveActionController;
+use App\Http\Controllers\Approver\ReportController as ApproverReportController;
+use App\Http\Controllers\Approver\DashboardController as ApproverDashboardController;
+
+// Super Admin Controllers
+use App\Http\Controllers\Super\OfficeController as SuperOfficeController;
+use App\Http\Controllers\Super\UserController as SuperUserController;
+use App\Http\Controllers\Super\DivisionController as SuperDivisionController;
+use App\Http\Controllers\Super\DashboardController as SuperDashboardController;
+
+/*
+|--------------------------------------------------------------------------
+| Public
+|--------------------------------------------------------------------------
+*/
+Route::get('/', function () {
+    return redirect()->route('login');
+});
+
+require __DIR__ . '/auth.php';
+
+/*
+|--------------------------------------------------------------------------
+| Authenticated Routes
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth'])->group(function () {
+
+    Route::get('/profile', [\App\Http\Controllers\ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [\App\Http\Controllers\ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [\App\Http\Controllers\ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    Route::get('/setup-account', [\App\Http\Controllers\Auth\ForcePasswordChangeController::class, 'edit'])->name('force-password.edit');
+    Route::post('/setup-account', [\App\Http\Controllers\Auth\ForcePasswordChangeController::class, 'update'])->name('force-password.update');
+
+    Route::get('/my-profile', [\App\Http\Controllers\Employee\ProfileController::class, 'show'])->name('employee.profile.show');
+    Route::post('/my-profile/signature', [\App\Http\Controllers\Employee\ProfileController::class, 'uploadSignature'])->name('employee.profile.signature');
+
+    /*
+    |--------------------------------------------------------------------------
+    | TRAFFIC COP: Single Landing Dashboard
+    |--------------------------------------------------------------------------
+    */
+    Route::get('/dashboard', function () {
+        /** @var \App\Models\User|null $user */
+        $user = Auth::user();
+        if (!$user) return redirect()->route('login');
+
+        $user->loadMissing('roles');
+
+        // Priority Checks
+        if ($user->hasRole('super_admin')) return redirect()->route('super.dashboard');
+        if ($user->hasRole('office_admin')) return redirect()->route('admin.dashboard');
+
+        // Check for any approver role
+        if ($user->roles->pluck('key')->intersect([
+            'approver_division_chief',
+            'approver_personnel',
+            'approver_chief_personnel',
+            'approver_chief_admin',
+            'approver_ard_ms'
+        ])->isNotEmpty()) {
+            return redirect()->route('approver.dashboard');
+        }
+
+        if ($user->hasRole('employee')) return redirect()->route('employee.dashboard');
+
+        abort(403, 'Your account does not have a valid role assigned. Please contact the administrator.');
+    })->name('dashboard');
+
+    // Attachments
+    Route::get('/attachments/{attachment}/preview', [AttachmentController::class, 'preview'])->name('attachments.preview');
+    Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])->name('attachments.download');
+
+    // Notifications
+    Route::get('/notifications/{id}/read', function($id) {
+
+        /** @var \App\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+
+        $notification = $user->notifications()->findOrFail($id);
+        $notification->markAsRead();
+
+        return redirect($notification->data['url']);
+
+    })->name('notifications.read');
+
+    Route::post('/notifications/mark-all-read', [NotificationController::class, 'markAllAsRead'])->name('notifications.markAllRead');
+
+    /*
+    |--------------------------------------------------------------------------
+    | EMPLOYEE
+    |--------------------------------------------------------------------------
+    */
+    Route::middleware('role:employee,approver_division_chief,approver_personnel,approver_chief_personnel,approver_chief_admin,approver_ard_ms')->prefix('employee')->name('employee.')->group(function () {
+
+        Route::get('/dashboard', [EmployeeDashboardController::class, 'index'])->name('dashboard');
+        Route::get('/dashboard/events', [EmployeeDashboardController::class, 'events'])->name('dashboard.events');
+
+        // LEAVES
+        Route::get('/leaves', [EmployeeLeaveController::class, 'index'])->name('leaves.index');
+        Route::get('/leaves/create', [EmployeeLeaveController::class, 'create'])->name('leaves.create');
+        Route::post('/leaves', [EmployeeLeaveController::class, 'store'])->name('leaves.store');
+        Route::get('/leaves/{id}', [EmployeeLeaveController::class, 'show'])->name('leaves.show');
+        Route::post('/leaves/required-docs', [EmployeeLeaveController::class, 'requiredDocs'])->name('leaves.requiredDocs');
+        Route::post('/leaves/{id}/cancel', [EmployeeLeaveController::class, 'requestCancellation'])->name('leaves.cancel');
+
+        // REPORTS (Employee Specific Only)
+        Route::get('/reports', [EmployeeReportController::class, 'index'])->name('reports.index');
+        Route::get('/reports/my-forms', [EmployeeReportController::class, 'myForms'])->name('reports.myForms');
+        Route::get('/reports/my-forms/excel', [EmployeeReportController::class, 'myFormsExcel'])->name('reports.myForms.excel');
+        Route::get('/reports/my-forms/pdf', [EmployeeReportController::class, 'myFormsPdf'])->name('reports.myForms.pdf');
+
+        // Form 6 PDF
+        Route::get('/leaves/{id}/form6/pdf', [EmployeeReportController::class, 'form6Pdf'])->name('leaves.form6.pdf');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | APPROVER
+    |--------------------------------------------------------------------------
+    */
+    Route::middleware('role:approver_division_chief,approver_personnel,approver_chief_personnel,approver_chief_admin,approver_ard_ms')
+        ->prefix('approver')->name('approver.')->group(function () {
+
+            Route::get('/dashboard', [ApproverDashboardController::class, 'index'])->name('dashboard');
+
+            Route::get('/inbox', [ApproverInboxController::class, 'index'])->name('inbox');
+            Route::get('/leaves/{id}', [ApproverLeaveActionController::class, 'show'])->name('leaves.show');
+            Route::post('/leaves/{id}/action', [ApproverLeaveActionController::class, 'action'])->name('leaves.action');
+            Route::post('/leaves/{id}/process-cancellation', [ApproverLeaveActionController::class, 'processCancellation'])->name('leaves.processCancellation');
+
+            Route::get('/reports', [ApproverReportController::class, 'index'])->name('reports.index');
+            Route::get('/reports/my-actions', [ApproverReportController::class, 'myActions'])->name('reports.myActions');
+            Route::get('/reports/my-actions/excel', [ApproverReportController::class, 'myActionsExcel'])->name('reports.myActions.excel');
+            Route::get('/reports/my-actions/pdf', [ApproverReportController::class, 'myActionsPdf'])->name('reports.myActions.pdf');
+
+            Route::get('/leaves/{id}/form6/pdf', [ApproverReportController::class, 'form6Pdf'])->name('leaves.form6.pdf');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | OFFICE ADMIN
+    |--------------------------------------------------------------------------
+    */
+    Route::middleware('role:office_admin')->prefix('admin')->name('admin.')->group(function () {
+
+        Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
+
+        Route::get('/approval-steps', [AdminApprovalStepController::class, 'index'])->name('approvalSteps.index');
+        Route::put('/approval-steps', [AdminApprovalStepController::class, 'update'])->name('approvalSteps.update');
+
+        // Reports
+        Route::get('/reports', [AdminReportController::class, 'index'])->name('reports.index');
+
+        Route::get('/reports/monthly', [AdminReportController::class, 'monthly'])->name('reports.monthly');
+        Route::get('/reports/monthly/excel', [AdminReportController::class, 'monthlyExcel'])->name('reports.monthly.excel');
+        Route::get('/reports/monthly/pdf', [AdminReportController::class, 'monthlyPdf'])->name('reports.monthly.pdf');
+
+        Route::get('/reports/employee', [AdminReportController::class, 'employee'])->name('reports.employee');
+        Route::get('/reports/employee/excel', [AdminReportController::class, 'employeeExcel'])->name('reports.employee.excel');
+        Route::get('/reports/employee/pdf', [AdminReportController::class, 'employeePdf'])->name('reports.employee.pdf');
+
+        Route::get('/reports/division', [AdminReportController::class, 'division'])->name('reports.division');
+        Route::get('/reports/division/excel', [AdminReportController::class, 'divisionExcel'])->name('reports.division.excel');
+        Route::get('/reports/division/pdf', [AdminReportController::class, 'divisionPdf'])->name('reports.division.pdf');
+
+        // Employee Management
+        Route::resource('employees', AdminEmployeeController::class);
+
+        Route::get('/leaves/{id}/form6/pdf', [AdminReportController::class, 'form6Pdf'])->name('leaves.form6.pdf');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | SUPER ADMIN
+    |--------------------------------------------------------------------------
+    */
+    Route::middleware('role:super_admin')->prefix('super')->name('super.')->group(function () {
+
+        Route::get('/dashboard', [SuperDashboardController::class, 'index'])->name('dashboard');
+
+        Route::resource('offices', SuperOfficeController::class)->except(['show', 'destroy']);
+
+        Route::resource('divisions', SuperDivisionController::class);
+
+        Route::resource('users', SuperUserController::class);
+    });
+});

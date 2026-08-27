@@ -1,0 +1,26 @@
+[variables]
+    NIXPACKS_PHP_VERSION = '8.4'
+    NIXPACKS_PHP_EXTENSIONS = 'gd, pdo_mysql, zip, opcache, bcmath'
+
+[phases.install]
+    dependsOn = ['setup']
+    cmds = [
+        # 1. Install PHP dependencies
+        'composer install --optimize-autoloader --no-interaction --no-progress',
+        # 2. Install Node/Tailwind dependencies
+        'npm install',
+        # 3. Fix permissions
+        'chmod -R 775 storage bootstrap/cache'
+    ]
+
+[phases.build]
+    dependsOn = ['install']
+    cmds = [
+        # 4. Compile Vite assets (CSS/JS)
+        'npm run build',
+        # 5. Clear and cache Laravel configs for production
+        'php artisan optimize:clear',
+        'php artisan config:cache',
+        'php artisan route:cache',
+        'php artisan view:cache'
+    ]
