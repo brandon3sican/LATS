@@ -240,7 +240,7 @@
 
             {{-- OPEN MASTER FORM FOR ACTIONS --}}
             @if($canAction)
-                <form action="{{ route('approver.leaves.action', $leave->id) }}" method="POST" id="actionForm">
+                <form action="{{ route('approver.leaves.action', $leave->id) }}" method="POST" id="actionForm" enctype="multipart/form-data">
                     @csrf
             @endif
 
@@ -389,6 +389,77 @@
                         @else
                             <input type="hidden" name="remarks" value="Leave credits certified by Personnel">
                         @endif
+
+                        {{-- APPROVER SIGNATURE --}}
+                        @php
+                            $approver = auth()->user();
+                            $savedSignatureSrc = null;
+                            if ($approver->signature_path) {
+                                $savedSignatureFile = storage_path('app/public/' . $approver->signature_path);
+                                if (file_exists($savedSignatureFile)) {
+                                    $savedSignatureSrc = 'data:image/' . pathinfo($savedSignatureFile, PATHINFO_EXTENSION)
+                                        . ';base64,' . base64_encode(file_get_contents($savedSignatureFile));
+                                }
+                            }
+                        @endphp
+
+                        <div class="card border-success mb-3" id="signatureCard">
+                            <div class="card-header bg-white fw-bold">
+                                <i class="bi bi-pen me-2 text-success"></i> Your E-Signature <span class="text-danger">*</span>
+                                <span class="text-muted fw-normal small ms-1">(required to approve)</span>
+                            </div>
+                            <div class="card-body">
+                                <ul class="nav nav-pills gap-2 mb-3" role="tablist">
+                                    @if($savedSignatureSrc)
+                                        <li class="nav-item">
+                                            <button class="nav-link active" type="button" data-signature-mode="saved">
+                                                <i class="bi bi-bookmark-check me-1"></i> Use saved signature
+                                            </button>
+                                        </li>
+                                    @endif
+                                    <li class="nav-item">
+                                        <button class="nav-link {{ $savedSignatureSrc ? '' : 'active' }}" type="button" data-signature-mode="upload">
+                                            <i class="bi bi-upload me-1"></i> Upload image
+                                        </button>
+                                    </li>
+                                    <li class="nav-item">
+                                        <button class="nav-link" type="button" data-signature-mode="draw">
+                                            <i class="bi bi-vector-pen me-1"></i> Draw signature
+                                        </button>
+                                    </li>
+                                </ul>
+
+                                <input type="hidden" name="signature_mode" id="signature_mode" value="{{ $savedSignatureSrc ? 'saved' : 'upload' }}">
+
+                                @if($savedSignatureSrc)
+                                    <div class="signature-pane" data-signature-pane="saved">
+                                        <img src="{{ $savedSignatureSrc }}" alt="Saved signature" class="border rounded p-2 bg-white" style="max-height: 120px;">
+                                        <div class="text-muted small mt-2">This signature will be affixed to the CS Form 6.</div>
+                                    </div>
+                                @endif
+
+                                <div class="signature-pane {{ $savedSignatureSrc ? 'd-none' : '' }}" data-signature-pane="upload">
+                                    <input type="file" name="signature_file" id="signature_file" class="form-control" accept="image/png, image/jpeg, image/jpg">
+                                    <div class="text-muted small mt-2">PNG or JPG, max 2MB. It will be saved as your signature for future approvals.</div>
+                                </div>
+
+                                <div class="signature-pane d-none" data-signature-pane="draw">
+                                    <canvas id="signaturePad" width="600" height="200" class="border rounded bg-white w-100" style="touch-action: none; max-width: 600px;"></canvas>
+                                    <div class="mt-2">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="clearSignaturePad">
+                                            <i class="bi bi-eraser me-1"></i> Clear
+                                        </button>
+                                        <span class="text-muted small ms-2">Draw using your mouse or finger. It will be saved for future approvals.</span>
+                                    </div>
+                                </div>
+
+                                <input type="hidden" name="signature_data" id="signature_data">
+
+                                <div class="alert alert-danger py-2 mt-3 mb-0 d-none" id="signatureError">
+                                    Please upload or draw your signature before approving.
+                                </div>
+                            </div>
+                        </div>
 
                         <div class="d-flex gap-2">
                             <button type="submit" name="action" value="approved" class="btn btn-success px-4 fw-bold">
@@ -561,6 +632,95 @@
 </style>
 <script>
   document.addEventListener("DOMContentLoaded", function() {
+    @if($canAction)
+        const actionForm = document.getElementById('actionForm');
+        const modeInput = document.getElementById('signature_mode');
+        const dataInput = document.getElementById('signature_data');
+        const fileInput = document.getElementById('signature_file');
+        const errorBox = document.getElementById('signatureError');
+        const canvas = document.getElementById('signaturePad');
+        const ctx = canvas.getContext('2d');
+        let hasDrawing = false;
+        let drawing = false;
+
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#000';
+
+        function pointFrom(event) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: (event.clientX - rect.left) * (canvas.width / rect.width),
+                y: (event.clientY - rect.top) * (canvas.height / rect.height)
+            };
+        }
+
+        canvas.addEventListener('pointerdown', function(e) {
+            drawing = true;
+            canvas.setPointerCapture(e.pointerId);
+            const p = pointFrom(e);
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+        });
+
+        canvas.addEventListener('pointermove', function(e) {
+            if (!drawing) return;
+            const p = pointFrom(e);
+            ctx.lineTo(p.x, p.y);
+            ctx.stroke();
+            hasDrawing = true;
+        });
+
+        ['pointerup', 'pointerleave', 'pointercancel'].forEach(function(evt) {
+            canvas.addEventListener(evt, function() { drawing = false; });
+        });
+
+        document.getElementById('clearSignaturePad').addEventListener('click', function() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            hasDrawing = false;
+        });
+
+        document.querySelectorAll('[data-signature-mode]').forEach(function(tab) {
+            tab.addEventListener('click', function() {
+                const mode = tab.dataset.signatureMode;
+                modeInput.value = mode;
+                document.querySelectorAll('[data-signature-mode]').forEach(function(t) {
+                    t.classList.toggle('active', t === tab);
+                });
+                document.querySelectorAll('[data-signature-pane]').forEach(function(pane) {
+                    pane.classList.toggle('d-none', pane.dataset.signaturePane !== mode);
+                });
+                errorBox.classList.add('d-none');
+            });
+        });
+
+        actionForm.addEventListener('submit', function(e) {
+            const action = e.submitter ? e.submitter.value : null;
+            if (action !== 'approved') return;
+
+            const mode = modeInput.value;
+
+            if (mode === 'upload' && !(fileInput.files && fileInput.files.length)) {
+                e.preventDefault();
+                errorBox.textContent = 'Please choose a signature image file before approving.';
+                errorBox.classList.remove('d-none');
+                document.getElementById('signatureCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+
+            if (mode === 'draw') {
+                if (!hasDrawing) {
+                    e.preventDefault();
+                    errorBox.textContent = 'Please draw your signature before approving.';
+                    errorBox.classList.remove('d-none');
+                    document.getElementById('signatureCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return;
+                }
+                dataInput.value = canvas.toDataURL('image/png');
+            }
+        });
+    @endif
+
     @if($leave->getDetail('selected_dates') && is_array($leave->getDetail('selected_dates')))
         const originalDates = {!! json_encode($leave->getDetail('selected_dates')) !!};
 
