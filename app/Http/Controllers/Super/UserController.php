@@ -17,7 +17,7 @@ class UserController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Employee::with(['user', 'office', 'division']);
+        $query = Employee::with(['user.roles', 'office', 'division']);
 
         // Search Filter
         if ($request->has('search') && $request->search != '') {
@@ -146,6 +146,6 @@ class UserController extends Controller
             $employee->user->roles()->sync($roles);
         });
 
-        return redirect()->route('super.users.index')->with('success', 'User updated successfully.');
+        return redirect()->route('super.users.index')->with('updated', 'User updated successfully.');
     }
 }

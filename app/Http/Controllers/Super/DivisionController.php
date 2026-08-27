@@ -21,9 +21,7 @@ class DivisionController extends Controller
             ->paginate(15)
             ->withQueryString();
 
-        $offices = Office::orderBy('name')->get();
-
-        return view('super.divisions.index', compact('divisions', 'q', 'offices'));
+        return view('super.divisions.index', compact('divisions', 'q'));
     }
 
     public function create()
@@ -59,7 +57,7 @@ class DivisionController extends Controller
 
         $division->update($data);
 
-        return redirect()->route('super.divisions.index')->with('status', 'Division updated.');
+        return redirect()->route('super.divisions.index')->with('success', 'Division updated.');
     }
 
     public function destroy(Division $division)

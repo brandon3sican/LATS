@@ -55,6 +55,6 @@ class OfficeController extends Controller
 
         $office->update($data);
 
-        return redirect()->route('super.offices.index')->with('status', 'Office updated.');
+        return redirect()->route('super.offices.index')->with('success', 'Office updated.');
     }
 }

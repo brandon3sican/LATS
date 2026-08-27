@@ -44,7 +44,25 @@
 
 @section('content')
     <div class="container py-4">
-        <h3 class="mb-4">Super Admin Dashboard</h3>
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h3 class="mb-0">Super Admin Dashboard</h3>
+            <div class="d-flex gap-2">
+                <form method="GET" action="{{ route('super.dashboard') }}" class="d-flex gap-2">
+                    <select name="division_id" class="form-select" style="width: 250px;">
+                        <option value="">All Divisions</option>
+                        @foreach ($divisions as $division)
+                            <option value="{{ $division->id }}" {{ $selectedDivision == $division->id ? 'selected' : '' }}>
+                                {{ $division->name }}
+                            </option>
+                        @endforeach
+                    </select>
+                    <button type="submit" class="btn btn-primary">Filter</button>
+                </form>
+                @if ($selectedDivision)
+                    <a href="{{ route('super.dashboard') }}" class="btn btn-outline-secondary">Clear</a>
+                @endif
+            </div>
+        </div>
 
         <div class="row g-3">
             @foreach ($overviewCards as $card)
