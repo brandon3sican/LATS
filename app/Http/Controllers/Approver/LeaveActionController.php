@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\LeaveStatusUpdated;
 
@@ -101,6 +102,9 @@ class LeaveActionController extends Controller
         $request->validate([
             'action' => 'required|in:approved,returned,disapproved',
             'remarks' => 'nullable|string|max:2000',
+            'signature_mode' => 'required_if:action,approved|in:saved,upload,draw',
+            'signature_file' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            'signature_data' => 'nullable|string',
         ]);
 
         /** @var \App\Models\User $user */
@@ -116,6 +120,14 @@ class LeaveActionController extends Controller
 
         if (in_array($action, ['returned', 'disapproved'], true) && blank($remarks)) {
             return back()->withErrors(['remarks' => 'Remarks are required when returning or disapproving.']);
+        }
+
+        if ($action === 'approved') {
+            try {
+                $this->storeApproverSignature($request, $user);
+            } catch (\InvalidArgumentException $e) {
+                return back()->withErrors(['signature' => $e->getMessage()]);
+            }
         }
 
         DB::transaction(function () use ($request, $leave, $user, $action, $remarks) {
@@ -251,6 +263,65 @@ class LeaveActionController extends Controller
         }
 
         return redirect()->route('approver.inbox')->with('status', 'Application processed successfully.');
+    }
+
+    /**
+     * Make sure the approver has a signature on file, storing a newly uploaded
+     * or drawn one so it can be reused on future approvals.
+     */
+    private function storeApproverSignature(Request $request, \App\Models\User $user): void
+    {
+        $mode = $request->input('signature_mode');
+
+        if ($mode === 'saved') {
+            if (blank($user->signature_path) || !Storage::disk('public')->exists($user->signature_path)) {
+                throw new \InvalidArgumentException('No saved signature found. Please upload or draw your signature to approve.');
+            }
+
+            return;
+        }
+
+        if ($mode === 'upload') {
+            $file = $request->file('signature_file');
+            if (!$file) {
+                throw new \InvalidArgumentException('Please upload or draw your signature to approve.');
+            }
+
+            $path = $file->storeAs(
+                'signatures',
+                $user->id . '_' . time() . '.' . $file->getClientOriginalExtension(),
+                'public'
+            );
+        } else {
+            $binary = $this->decodeSignatureData((string) $request->input('signature_data', ''));
+
+            $path = 'signatures/' . $user->id . '_' . time() . '.png';
+            Storage::disk('public')->put($path, $binary);
+        }
+
+        $oldPath = $user->signature_path;
+
+        $user->signature_path = $path;
+        $user->save();
+
+        if ($oldPath && $oldPath !== $path && Storage::disk('public')->exists($oldPath)) {
+            Storage::disk('public')->delete($oldPath);
+        }
+    }
+
+    private function decodeSignatureData(string $data): string
+    {
+        if (!preg_match('/^data:image\/png;base64,/', $data)) {
+            throw new \InvalidArgumentException('The drawn signature could not be read. Please try again.');
+        }
+
+        $binary = base64_decode(substr($data, strlen('data:image/png;base64,')), true);
+
+        if ($binary === false || $binary === '') {
+            throw new \InvalidArgumentException('The drawn signature could not be read. Please try again.');
+        }
+
+        return $binary;
     }
 
     private function authorizeAction(\App\Models\User $user, LeaveApplication $leave): void
