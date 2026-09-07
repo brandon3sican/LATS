@@ -12,7 +12,7 @@ class LeaveApplication extends Model
         'employee_id', 'office_id', 'leave_type_id',
         'date_filed', 'start_date', 'end_date',
         'working_days_requested', 'status', 'current_step_order',
-        'details_json', 'commutation',
+        'details_json', 'commutation', 'temporary_signature',
     ];
 
     protected $casts = [

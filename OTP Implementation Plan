@@ -1,0 +1,185 @@
+# OTP Implementation Plan
+
+Implement OTP-based approval system using spatie/laravel-one-time-passwords package with email delivery for Chief Personnel and ARD roles only, requiring OTP verification as the final step after signature submission.
+
+## Overview
+Implement a secure OTP approval system using the `spatie/laravel-one-time-passwords` package for leave application approvals. The system will require digital signature first, then OTP verification (via email) as the final step for Chief Personnel and ARD roles before the leave application moves to the next approval step or final approval.
+
+## Implementation Steps
+
+### 1. Package Installation and Configuration
+- Install `spatie/laravel-one-time-passwords` package via Composer
+- Publish OTP migrations: `php artisan vendor:publish --tag="one-time-passwords-migrations"`
+- Run migrations: `php artisan migrate`
+- Publish OTP config (optional): `php artisan vendor:publish --tag="one-time-passwords-config"`
+- Configure OTP settings in `config/one-time-passwords.php`:
+  - `default_expires_in_minutes`: 5 (for approval workflow)
+  - `only_one_active_one_time_password_per_user`: true
+  - `enforce_same_origin`: true
+
+### 2. Database Schema Changes
+- Run the published `one_time_passwords` table migration (included in package)
+- No additional tables needed since using existing user email addresses
+
+### 3. Model Preparation
+- Update `User` model to use `Spatie\OneTimePasswords\Concerns\HasOneTimePasswords` trait
+- No additional models needed for phone numbers since using email
+
+### 4. Email Notification Implementation
+- Create custom notification class `App\Notifications\ApprovalOtpNotification` extending `Spatie\OneTimePasswords\Notifications\OneTimePasswordNotification`
+- Customize the email template for approval-specific messaging
+- Include leave application details in the email for context
+- Use Laravel's built-in mail system (already configured in the project)
+
+### 5. Controller Modifications
+- Update `LeaveActionController`:
+  - Modify the approval flow to handle signature first, then OTP
+  - Create new method `sendOtpAfterSignature($leaveId, $signatureData)`:
+    - Store the signature temporarily (session or temporary storage)
+    - Call `$user->sendOneTimePassword()` with custom notification
+    - Return success response with OTP UI
+  - Create new method `verifyOtpAndCompleteApproval($leaveId, $otp)`:
+    - Call `$user->consumeOneTimePassword($otp)`
+    - If valid, complete the approval process with stored signature
+    - Move leave application to next step or final approval
+    - Send notifications
+  - Modify existing `action()` method to handle the new two-step process for Chief Personnel and ARD
+  - Keep existing single-step process for other roles (Division Chief, Personnel)
+- Create new `OtpController` for handling OTP-related requests:
+  - `sendOtp()` - Generate and send OTP to user's email after signature
+  - `verifyOtp()` - Validate OTP code and complete approval
+  - `resendOtp()` - Resend OTP by calling sendOtp again
+
+### 6. Route Definitions
+- Add routes in `routes/web.php`:
+  - `POST /approver/leaves/{id}/send-otp-after-signature` - Send OTP after signature
+  - `POST /approver/leaves/{id}/verify-otp-and-approve` - Verify OTP and complete approval
+  - `POST /otp/resend` - Resend OTP
+
+### 7. View Updates
+- Update `resources/views/approver/review.blade.php`:
+  - Modify the approval modal flow for Chief Personnel and ARD roles:
+    - Step 1: Signature collection (existing signature UI)
+    - Step 2: After signature submission, show OTP verification UI
+    - Step 3: After OTP verification, complete approval
+  - Add OTP verification section after signature step for Chief Personnel and ARD roles
+  - Add "Send OTP" button that appears after signature is provided
+  - Add OTP input field after OTP is sent
+  - Add "Resend OTP" link
+  - Show loading state while sending OTP
+  - Add validation error messages for OTP
+  - Display message indicating OTP will be sent to user's email address
+  - For other roles (Division Chief, Personnel), keep existing single-step approval flow
+
+### 8. Temporary Signature Storage
+- Implement temporary storage for signature data between signature submission and OTP verification:
+  - Option 1: Use Laravel session with encrypted signature data
+  - Option 2: Use cache with expiration matching OTP lifetime
+  - Option 3: Add temporary signature column to leave_approvals table
+- Ensure signature data is cleaned up after OTP verification or on expiration
+
+### 9. Security and Validation
+- Add request validation for OTP operations:
+  - `OtpRequest` - Validate OTP code format (6 digits)
+- Rate limiting for OTP sending (prevent abuse)
+- Log all OTP operations in audit trail using Spatie's events or custom logging
+- Add middleware to ensure only authorized roles can trigger OTP
+- Schedule cleanup of expired OTPs: add to `app/Console/Kernel.php`
+- Ensure temporary signature storage is secure and time-limited
+
+### 10. Testing and Verification
+- Test signature collection and temporary storage
+- Test OTP generation and delivery via email after signature
+- Test OTP validation for valid and invalid codes
+- Test complete approval flow (signature → OTP → approval) for Chief Personnel
+- Test complete approval flow (signature → OTP → approval) for ARD
+
+- Test approval flow without OTP for Division Chief and Personnel roles
+- Test error handling (invalid OTP, expired OTP, email failures)
+- Test cleanup of temporary signature data
+- Test same-origin enforcement (IP + user agent)
+
+## Files to Modify
+
+### New Files
+- `app/Notifications/ApprovalOtpNotification.php` - Custom email notification for OTP
+- `app/Http/Controllers/OtpController.php` - OTP handling controller
+- `app/Http/Requests/OtpRequest.php` - OTP validation request
+
+### Modified Files
+- `composer.json` - Add package dependency
+- `config/one-time-passwords.php` - OTP package configuration (new file after publish)
+- `app/Models/User.php` - Add HasOneTimePasswords trait
+- `app/Http/Controllers/Approver/LeaveActionController.php` - Modify approval flow for signature then OTP
+- `resources/views/approver/review.blade.php` - Add OTP verification after signature step
+- `routes/web.php` - Add OTP routes
+- `app/Console/Kernel.php` - Add OTP cleanup schedule
+
+## Verification Steps
+- [ ] Install package and verify OTP configuration is published
+- [ ] Run migrations and verify one_time_passwords table exists
+- [ ] Test email notification with test user
+- [ ] Test signature temporary storage mechanism
+- [ ] Test OTP sending after signature using `$user->sendOneTimePassword()`
+- [ ] Test OTP verification and approval completion using `$user->consumeOneTimePassword()`
+- [ ] Test complete approval flow (signature → OTP → approval) for Chief Personnel role
+- [ ] Test complete approval flow (signature → OTP → approval) for ARD role
+- [ ] Test approval flow without OTP for Division Chief role
+- [ ] Test approval flow without OTP for Personnel role
+- [ ] Verify audit trail logs OTP operations
+- [ ] Test error handling (invalid OTP, expired OTP, email failures)
+- [ ] Test cleanup of temporary signature data
+- [ ] Test same-origin enforcement (different IP/user agent)
+- [ ] Verify expired OTP cleanup scheduling works
+
+## Risks and Considerations
+- **Email Delivery**: Email delivery may be delayed or filtered as spam
+- **User Experience**: Two-step process (signature then OTP) may slow down approval for Chief Personnel and ARD
+- **Email Access**: Users must have access to their email during approval process
+- **Temporary Storage**: Signature data must be stored securely and cleaned up properly
+- **Rate Limiting**: Must implement strict rate limiting to prevent abuse
+- **Same-Origin Enforcement**: May cause issues if users switch devices/networks during approval
+- **Security**: OTP codes expire in 2-5 minutes and are single-use by default
+- **Audit Trail**: Need to implement custom logging since Spatie focuses on auth flows
+- **Database Storage**: Spatie only supports database storage (no cache option)
+- **Email Configuration**: Ensure Laravel mail settings are properly configured
+- **Flow Complexity**: Different approval flows for different roles increases complexity
+
+## Configuration Requirements
+- Laravel mail settings properly configured (SMTP, mailgun, etc.)
+- Users must have valid and accessible email addresses
+- Database migrations for one_time_passwords table
+- Chief Personnel and ARD users must have verified email addresses
+- Laravel scheduler configured for OTP cleanup
+- Secure temporary storage mechanism for signature data
+
+## Approval Flow Comparison
+
+### Chief Personnel and ARD (New Flow):
+1. Review leave application
+2. Provide digital signature
+3. Signature stored temporarily
+4. OTP sent to email
+5. Enter OTP code
+6. OTP verified → Approval completed → Move to next step/final approval
+
+### Division Chief and Personnel (Existing Flow):
+1. Review leave application
+2. Provide digital signature
+3. Approval completed → Move to next step
+
+## Advantages of Email vs SMS
+- **No Additional Cost**: Email delivery is typically free vs SMS charges
+- **No Additional Infrastructure**: Uses existing Laravel mail configuration
+- **No Phone Number Management**: Leverages existing user email addresses
+- **Easier Implementation**: No need for SMS gateway integration
+- **Better Audit Trail**: Email delivery can be tracked more easily
+- **No Phone Number Validation**: Eliminates need for phone number format validation
+
+## Advantages of Spatie Package
+- **Simpler API**: Easy to implement with `$user->sendOneTimePassword()` and `$user->consumeOneTimePassword()`
+- **Built-in Security**: Same-origin enforcement (IP + user agent)
+- **Auto-cleanup**: Scheduled deletion of expired OTPs
+- **Less Configuration**: Minimal setup required
+- **Better Documentation**: Clear, modern documentation
+- **Active Maintenance**: Recently released package (May 2025)

@@ -16,6 +16,7 @@ class LeaveApproval extends Model
         'action',
         'remarks',
         'acted_at',
+        'signature',
     ];
 
     protected $casts = [

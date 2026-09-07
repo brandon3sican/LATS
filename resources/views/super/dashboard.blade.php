@@ -21,6 +21,20 @@
             'value' => data_get($stats, 'admins', 0),
             'variant' => 'info',
         ],
+        [
+            'title' => 'Audit Logs',
+            'value' => \App\Models\AuditLog::count(),
+            'variant' => 'warning',
+            'route' => 'super.audit-logs.index',
+            'linkText' => 'View Logs',
+        ],
+        [
+            'title' => 'Reports',
+            'value' => 'Generate',
+            'variant' => 'info',
+            'route' => 'super.reports.generate',
+            'linkText' => 'Generate Reports',
+        ],
     ];
 
     $leaveCards = [
@@ -64,13 +78,16 @@
             </div>
         </div>
 
+        {{-- Overview Cards - Only shown when All Divisions is selected --}}
+        @if(!$selectedDivision)
         <div class="row g-3">
             @foreach ($overviewCards as $card)
-                <div class="col-12 col-sm-6 col-lg-4">
+                <div class="col-12 col-sm-6 col-lg-3 col-xxl">
                     <x-stat-card :title="$card['title']" :value="$card['value']" :variant="$card['variant']" :link="isset($card['route']) && Route::has($card['route']) ? route($card['route']) : null" :link-text="$card['linkText'] ?? null" />
                 </div>
             @endforeach
         </div>
+        @endif
 
         <h4 class="mb-3 mt-4">Leave Request Statistics</h4>
 
@@ -83,6 +100,87 @@
                 </div>
             @endforeach
         </div>
+
+        {{-- Efficiency Metrics Cards --}}
+        @php
+            $efficiencyMetrics = $stats['efficiency'] ?? null;
+        @endphp
+        @if($efficiencyMetrics)
+        <h4 class="mb-3 mt-4">Efficiency Metrics</h4>
+        <div class="row g-3">
+            {{-- Average Approval Time --}}
+            <div class="col-6 col-lg-3 col-xxl">
+                <div class="card shadow-sm border-start border-4 border-success h-100">
+                    <div class="card-body d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="text-muted small text-uppercase fw-bold">Avg Approval Time</div>
+                            <div class="fs-1 fw-bold text-dark">{{ $efficiencyMetrics['avg_approval_time_formatted'] }}</div>
+                        </div>
+                        <i class="bi bi-clock-history fs-1 text-success"></i>
+                    </div>
+                    <div class="card-footer bg-white">
+                        <div class="small text-muted">{{ $efficiencyMetrics['approved_count'] }} approved</div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Average Step Response Time --}}
+            <div class="col-6 col-lg-3 col-xxl">
+                <div class="card shadow-sm border-start border-4 border-info h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-bold mb-2">Avg Step Response</div>
+                        @if(!empty($efficiencyMetrics['step_response_times']))
+                            @foreach($efficiencyMetrics['step_response_times'] as $step => $data)
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <span class="small">Step {{ $step }}:</span>
+                                    <span class="fw-bold">{{ $data['formatted'] }}</span>
+                                </div>
+                            @endforeach
+                        @else
+                            <div class="small text-muted">No step data</div>
+                        @endif
+                    </div>
+                    <div class="card-footer bg-white">
+                        <div class="small text-muted">Per approval step</div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Approval Rate --}}
+            <div class="col-6 col-lg-3 col-xxl">
+                <div class="card shadow-sm border-start border-4 border-primary h-100">
+                    <div class="card-body d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="text-muted small text-uppercase fw-bold">Approval Rate</div>
+                            <div class="fs-1 fw-bold text-dark">{{ $efficiencyMetrics['approval_rate'] }}%</div>
+                        </div>
+                        <i class="bi bi-graph-up-arrow fs-1 text-primary"></i>
+                    </div>
+                    <div class="card-footer bg-white">
+                        <div class="small text-muted">{{ $efficiencyMetrics['approved_count'] }}/{{ $efficiencyMetrics['total_applications'] }}</div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Bottleneck Analysis --}}
+            @if($efficiencyMetrics['bottleneck_analysis'])
+            <div class="col-6 col-lg-3 col-xxl">
+                <div class="card shadow-sm border-start border-4 border-warning h-100">
+                    <div class="card-body d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="text-muted small text-uppercase fw-bold">Slowest Step</div>
+                            <div class="fs-1 fw-bold text-dark">Step {{ $efficiencyMetrics['bottleneck_analysis']['step_order'] }}</div>
+                        </div>
+                        <i class="bi bi-exclamation-triangle fs-1 text-warning"></i>
+                    </div>
+                    <div class="card-footer bg-white">
+                        <div class="small text-muted">Avg: {{ $efficiencyMetrics['bottleneck_analysis']['formatted'] }}</div>
+                    </div>
+                </div>
+            </div>
+            @endif
+        </div>
+        @endif
 
         <div class="row g-3 mt-1">
             <div class="col-12 col-xl-8">

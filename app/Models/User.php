@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\OneTimePassword;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @method bool hasRole(string $key)
@@ -74,5 +76,108 @@ class User extends Authenticatable
     public function roleKeys(): array
     {
         return $this->roles->pluck('key')->all();
+    }
+
+    public function oneTimePasswords(): HasMany
+    {
+        return $this->hasMany(OneTimePassword::class);
+    }
+
+    public function otps(): HasMany
+    {
+        return $this->hasMany(OneTimePassword::class);
+    }
+
+    public function generateOneTimePassword(int $expiresInMinutes = 5): OneTimePassword
+    {
+        // Clean up expired OTPs for this user
+        \Illuminate\Support\Facades\DB::statement("DELETE FROM `lats_otp_table` WHERE `user_id` = ? AND `expires_at` < NOW()", [$this->id]);
+
+        // Generate a 6-digit OTP code first
+        $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+
+        // Use MySQL NOW() function for expiration to avoid timezone issues
+        $expiresAt = now()->addMinutes($expiresInMinutes);
+
+        // Insert OTP using direct query without prefix
+        \Illuminate\Support\Facades\DB::statement("INSERT INTO `lats_otp_table` (`user_id`, `code`, `expires_at`, `ip_address`, `user_agent`, `used`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())", [
+            $this->id,
+            $code,
+            $expiresAt,
+            request()->ip(),
+            request()->userAgent(),
+            false,
+        ]);
+
+        // Retrieve the created OTP without prefix - use the code to find it
+        $otp = \Illuminate\Support\Facades\DB::select("SELECT * FROM `lats_otp_table` WHERE `user_id` = ? AND `code` = ? ORDER BY `id` DESC LIMIT 1", [$this->id, $code])[0] ?? null;
+
+        // Log OTP creation for debugging
+        \Illuminate\Support\Facades\Log::info('OTP Created in database', [
+            'id' => $otp->id,
+            'code' => $otp->code,
+            'user_id' => $otp->user_id,
+            'expires_at' => $otp->expires_at,
+            'used' => $otp->used,
+            'created_at' => $otp->created_at
+        ]);
+
+        // Create OneTimePassword model instance for compatibility
+        $otpModel = new OneTimePassword();
+        $otpModel->id = $otp->id;
+        $otpModel->user_id = $otp->user_id;
+        $otpModel->code = $otp->code;
+        $otpModel->expires_at = $otp->expires_at;
+        $otpModel->ip_address = $otp->ip_address;
+        $otpModel->user_agent = $otp->user_agent;
+        $otpModel->used = $otp->used;
+
+        return $otpModel;
+    }
+
+    public function consumeOneTimePassword(string $code): bool
+    {
+        // Log what we're looking for
+        $currentTime = now();
+        \Illuminate\Support\Facades\Log::info('Attempting to verify OTP', [
+            'code' => $code,
+            'user_id' => $this->id,
+            'now' => $currentTime->toIso8601String(),
+            'now_mysql_format' => $currentTime->toDateTimeString()
+        ]);
+
+        // First, let's see what OTPs match the code regardless of status
+        $matchingOtps = \Illuminate\Support\Facades\DB::select("SELECT * FROM `lats_otp_table` WHERE `user_id` = ? AND `code` = ?", [$this->id, $code]);
+        \Illuminate\Support\Facades\Log::info('Matching OTPs', [
+            'code' => $code,
+            'user_id' => $this->id,
+            'matching_otps' => $matchingOtps
+        ]);
+
+        // Try to find the specific OTP with conditions
+        $otp = \Illuminate\Support\Facades\DB::select("SELECT * FROM `lats_otp_table` WHERE `user_id` = ? AND `code` = ? AND `used` = 0 AND `expires_at` > ?", [$this->id, $code, $currentTime])[0] ?? null;
+
+        if (!$otp) {
+            // Log why OTP was not found for debugging
+            \Illuminate\Support\Facades\Log::info('OTP not found in raw SQL', [
+                'code' => $code,
+                'user_id' => $this->id,
+                'available_otps' => \Illuminate\Support\Facades\DB::select("SELECT code, expires_at, used FROM `lats_otp_table` WHERE `user_id` = ? AND `used` = 0 AND `expires_at` > ?", [$this->id, $currentTime])
+            ]);
+            return false;
+        }
+
+        // Update as used using raw SQL
+        \Illuminate\Support\Facades\DB::statement("UPDATE `lats_otp_table` SET `used` = 1 WHERE `id` = ?", [$otp->id]);
+
+        return true;
+    }
+
+    public function hasValidOneTimePassword(): bool
+    {
+        return $this->oneTimePasswords()
+            ->where('used', false)
+            ->where('expires_at', '>', now())
+            ->exists();
     }
 }

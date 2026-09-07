@@ -4,6 +4,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\SignatureController;
+use App\Http\Controllers\OtpController;
 
 // Admin Controllers
 use App\Http\Controllers\Admin\ReportController as AdminReportController;
@@ -28,6 +30,8 @@ use App\Http\Controllers\Super\OfficeController as SuperOfficeController;
 use App\Http\Controllers\Super\UserController as SuperUserController;
 use App\Http\Controllers\Super\DivisionController as SuperDivisionController;
 use App\Http\Controllers\Super\DashboardController as SuperDashboardController;
+use App\Http\Controllers\Super\AuditLogController as SuperAuditLogController;
+use App\Http\Controllers\Super\ReportGeneratorController as SuperReportGeneratorController;
 
 /*
 |--------------------------------------------------------------------------
@@ -56,6 +60,9 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/my-profile', [\App\Http\Controllers\Employee\ProfileController::class, 'show'])->name('employee.profile.show');
     Route::post('/my-profile/signature', [\App\Http\Controllers\Employee\ProfileController::class, 'uploadSignature'])->name('employee.profile.signature');
+    Route::get('/signature-preview/{path}', [SignatureController::class, 'show'])
+        ->where('path', '.*')
+        ->name('signatures.show');
 
     /*
     |--------------------------------------------------------------------------
@@ -149,7 +156,13 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/inbox', [ApproverInboxController::class, 'index'])->name('inbox');
             Route::get('/leaves/{id}', [ApproverLeaveActionController::class, 'show'])->name('leaves.show');
             Route::post('/leaves/{id}/action', [ApproverLeaveActionController::class, 'action'])->name('leaves.action');
+            Route::post('/leaves/{id}/complete-with-otp', [ApproverLeaveActionController::class, 'completeApprovalWithOtp'])->name('leaves.completeWithOtp');
             Route::post('/leaves/{id}/process-cancellation', [ApproverLeaveActionController::class, 'processCancellation'])->name('leaves.processCancellation');
+
+            // OTP Routes
+            Route::post('/otp/send/{id}', [OtpController::class, 'sendOtp'])->name('otp.send');
+            Route::post('/otp/verify/{id}', [OtpController::class, 'verifyOtp'])->name('otp.verify');
+            Route::post('/otp/resend/{id}', [OtpController::class, 'resendOtp'])->name('otp.resend');
 
             Route::get('/reports', [ApproverReportController::class, 'index'])->name('reports.index');
             Route::get('/reports/my-actions', [ApproverReportController::class, 'myActions'])->name('reports.myActions');
@@ -206,5 +219,28 @@ Route::middleware(['auth'])->group(function () {
         Route::resource('divisions', SuperDivisionController::class);
 
         Route::resource('users', SuperUserController::class);
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | AUDIT LOGS (Shared by Super Admin and Chief Personnel)
+    |--------------------------------------------------------------------------
+    */
+    Route::middleware('role:super_admin,approver_chief_personnel')->prefix('super')->name('super.')->group(function () {
+        Route::get('/audit-logs', [SuperAuditLogController::class, 'index'])->name('audit-logs.index');
+        Route::get('/audit-logs/export', [SuperAuditLogController::class, 'export'])->name('audit-logs.export');
+        Route::get('/audit-logs/{id}', [SuperAuditLogController::class, 'show'])->name('audit-logs.show');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | REPORT GENERATION (Shared by Super Admin and Chief Personnel)
+    |--------------------------------------------------------------------------
+    */
+    Route::middleware('role:super_admin,approver_chief_personnel')->prefix('super')->name('super.')->group(function () {
+        Route::get('/reports/generate', [SuperReportGeneratorController::class, 'index'])->name('reports.generate');
+        Route::post('/reports/efficiency', [SuperReportGeneratorController::class, 'generateEfficiencyReport'])->name('reports.efficiency');
+        Route::post('/reports/audit', [SuperReportGeneratorController::class, 'generateAuditReport'])->name('reports.audit');
+        Route::post('/reports/combined', [SuperReportGeneratorController::class, 'generateCombinedReport'])->name('reports.combined');
     });
 });

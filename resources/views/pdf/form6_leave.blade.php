@@ -344,10 +344,9 @@
                 <div class="checkbox-group" style="margin-top: 10px;"><span class="checkbox">{{ $leave->commutation === 'not_requested' || $leave->commutation == null ? '✓' : '' }}</span> Not Requested</div>
                 <div class="checkbox-group"><span class="checkbox">{{ $leave->commutation === 'requested' ? '✓' : '' }}</span> Requested</div>
                 <div style="margin-top: 5px; text-align: center;">
-                    <div style="height: 30px;">
+                    <div style="height: 60px;">
                         @if(!empty($leave->employee->user->signature_path))
-                            <img src="{{ $getBase64Signature($leave->employee->user->signature_path) }}" style="height: 60px; margin-bottom: -35px; vertical-align: bottom;">
-                            <span style="font-size: 8px; font-weight: bold; margin-left: 5px;">{{ \Carbon\Carbon::parse($leave->date_filed)->format('m/d/y') }}</span>
+                            <img src="{{ $getBase64Signature($leave->employee->user->signature_path) }}" style="display: block; margin: 0 auto; height: 60px; margin-bottom: -35px; vertical-align: bottom;">
                         @endif
                     </div>
                     <div style="border-bottom: 1px solid black; width: 80%; margin: 0 auto;"></div>
@@ -391,7 +390,7 @@
                 <div style="margin-top: 5px; text-align: center;">
                     <div style="height: 30px;">
                         @if(in_array($personnelAction, ['approved', 'certified']) && !empty($chiefPersonnelUser->signature_path))
-                            <img src="{{ $getBase64Signature($chiefPersonnelUser->signature_path) }}" style="height: 60px; margin-bottom: -35px; vertical-align: bottom;">
+                            <img src="{{ $getBase64Signature($chiefPersonnelUser->signature_path) }}" style="display: block; margin: 0 auto; height: 60px; margin-bottom: -35px; vertical-align: bottom;">
                             <span style="font-size: 8px; font-weight: bold; margin-left: 5px;">{{ \Carbon\Carbon::parse($personnelDate)->format('m/d/y') }}</span>
                         @endif
                     </div>
@@ -421,8 +420,8 @@
                 <div style="margin-top: 5px; text-align: center;">
                     <div style="height: 30px;">
                         @if($chiefAction === 'approved' && !empty($chiefUser->signature_path))
-                            <img src="{{ $getBase64Signature($chiefUser->signature_path) }}" style="height: 60px; margin-bottom: -35px; vertical-align: bottom;">
-                            <span style="font-size: 8px; font-weight: bold; margin-left: 5px;">{{ \Carbon\Carbon::parse($chiefDate)->format('m/d/y') }}</span>
+                            <img src="{{ $getBase64Signature($chiefUser->signature_path) }}" style="display: block; margin: 0 auto; height: 60px; margin-bottom: -35px; vertical-align: bottom;"><br>
+                            <span style="font-size: 8px; font-weight: bold; margin-left: 200px; margin-bottom: -50px;">{{ \Carbon\Carbon::parse($chiefDate)->format('m/d/y') }}</span>
                         @endif
                     </div>
                     <div style="border-bottom: 1px solid black; width: 80%; margin: 0 auto;">
@@ -468,10 +467,10 @@
                         <td style="width: 30%; border: none;"></td>
 
                         <td style="width: 40%; text-align: center; border: none; padding-top: 5px;">
-                            <div style="height: 40px;">
+                            <div style="height: 30px;">
                                 @if($ardAction === 'approved' && !empty($ardUser->signature_path))
-                                    <img src="{{ $getBase64Signature($ardUser->signature_path) }}" style="height: 75px; margin-bottom: -45px; vertical-align: bottom;">
-                                    <span style="font-size: 8px; font-weight: bold; margin-left: 5px;">{{ \Carbon\Carbon::parse($ardDate)->format('m/d/y') }}</span>
+                                    <img src="{{ $getBase64Signature($ardUser->signature_path) }}" style="display: block; margin: 0 auto; height: 75px; margin-bottom: -80px; vertical-align: bottom;"><br>
+                                    <span style="font-size: 8px; font-weight: bold; margin-left: 200px; margin-bottom: -50px;">{{ \Carbon\Carbon::parse($ardDate)->format('m/d/y') }}</span>
                                 @endif
                             </div>
                             <div style="border-bottom: 1px solid black; width: 100%; margin: 0 auto; font-weight: bold; text-transform: uppercase;">

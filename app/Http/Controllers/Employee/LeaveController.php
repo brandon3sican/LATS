@@ -107,6 +107,7 @@ class LeaveController extends Controller
             'reason' => 'required|string|max:2000',
             'commutation' => 'nullable|string|max:50',
             'details' => 'nullable|array',
+            'signature_data' => 'required|string',
             'attachments' => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'max:5120', 'mimes:pdf,doc,docx,jpg,jpeg,png'],
         ]);
@@ -187,6 +188,27 @@ class LeaveController extends Controller
         }
 
         $leave = DB::transaction(function () use ($validated, $user, $request, $details, $start_date, $end_date) {
+            // Save user signature if provided
+            if (!empty($validated['signature_data'])) {
+                $signatureData = $validated['signature_data'];
+                
+                // Remove the data URI prefix if present
+                if (preg_match('/^data:image\/(\w+);base64,/', $signatureData, $matches)) {
+                    $extension = $matches[1];
+                    $signatureData = substr($signatureData, strpos($signatureData, ',') + 1);
+                    $signatureImage = base64_decode($signatureData);
+                    
+                    // Generate filename and store
+                    $filename = 'signature_' . $user->id . '_' . time() . '.' . $extension;
+                    $path = 'signatures/' . $filename;
+                    
+                    \Storage::disk('public')->put($path, $signatureImage);
+                    
+                    // Update user's signature_path
+                    $user->signature_path = $path;
+                    $user->save();
+                }
+            }
 
             $leave = LeaveApplication::create([
                 'employee_id' => $user->employee->id,

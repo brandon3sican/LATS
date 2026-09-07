@@ -4,10 +4,17 @@ namespace App\Http\Controllers\Approver;
 
 use App\Http\Controllers\Controller;
 use App\Models\{ApprovalStep, LeaveApplication, Division};
+use App\Services\AuditLogService;
 use Illuminate\Http\Request;
 
 class InboxController extends Controller
 {
+    protected AuditLogService $auditLogService;
+
+    public function __construct(AuditLogService $auditLogService)
+    {
+        $this->auditLogService = $auditLogService;
+    }
     public function index(Request $request)
     {
         $user = $request->user()->loadMissing('roles', 'employee');
@@ -79,6 +86,20 @@ class InboxController extends Controller
 
         $leaves = $query->latest()->paginate(15)->withQueryString();
         $divisions = Division::where('office_id', $officeId)->get();
+
+        // Log inbox access with filter parameters
+        $filters = [];
+        if ($request->filled('division_id')) {
+            $filters['division_id'] = $request->division_id;
+        }
+        if ($request->filled('date_from')) {
+            $filters['date_from'] = $request->date_from;
+        }
+        if ($request->filled('date_to')) {
+            $filters['date_to'] = $request->date_to;
+        }
+
+        $this->auditLogService->logInboxAccess($user, $filters, $request);
 
         return view('approver.inbox', compact('leaves', 'divisions'));
     }

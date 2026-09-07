@@ -21,6 +21,7 @@
 
       <form method="POST" action="{{ route('employee.leaves.store') }}" enctype="multipart/form-data" id="leaveForm">
         @csrf
+        <input type="hidden" name="signature_data" id="signatureData">
 
         {{-- BASIC INFO --}}
         <div class="card shadow-sm mb-3">
@@ -141,6 +142,7 @@
             </div>
           </div>
         </div>
+
 
         {{-- DETAILS --}}
         <div class="card shadow-sm mb-3">
@@ -421,7 +423,7 @@
         {{-- ATTACHMENTS --}}
 
         <div class="d-flex gap-2">
-          <button type="submit" class="btn btn-primary">Submit Leave Application</button>
+          <button type="button" class="btn btn-primary" id="btnSubmit">Submit Leave Application</button>
           <button type="reset" class="btn btn-outline-secondary" id="btnReset">Reset</button>
         </div>
 
@@ -430,15 +432,211 @@
     </div>
   </div>
 </div>
+
+{{-- SIGNATURE MODAL --}}
+<div class="modal fade" id="signatureModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Applicant's Signature</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <canvas id="signatureCanvas" width="500" height="150" class="border rounded" style="width: 100%; height: 150px; background-color: #fff; cursor: crosshair;"></canvas>
+          @error('signature_data') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
+        </div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="clearSignature">Clear Signature</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="uploadSignature">Upload Image Instead</button>
+          <input type="file" id="signatureUpload" accept="image/*" class="d-none">
+        </div>
+        <div class="form-text small mt-2">Sign above or upload an image of your signature to confirm your leave application.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="confirmSubmit">Confirm & Submit</button>
+      </div>
+    </div>
+  </div>
+</div>
 @endsection
 
 @push('scripts')
+{{-- Bootstrap CSS and JS for modal --}}
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
 {{-- Flatpickr CSS and JS --}}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 
 <script>
+// Signature Pad Functionality - Custom Implementation
+(function() {
+    const canvas = document.getElementById('signatureCanvas');
+    const signatureData = document.getElementById('signatureData');
+    const clearBtn = document.getElementById('clearSignature');
+    const uploadBtn = document.getElementById('uploadSignature');
+    const uploadInput = document.getElementById('signatureUpload');
+
+    let isDrawing = false;
+    let lastX = 0;
+    let lastY = 0;
+    let ctx = null;
+
+    function initCanvas() {
+        if (!canvas) return;
+        ctx = canvas.getContext('2d');
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+    }
+
+    function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
+        };
+    }
+
+    function startDrawing(e) {
+        e.preventDefault();
+        isDrawing = true;
+        const pos = getPos(e);
+        lastX = pos.x;
+        lastY = pos.y;
+    }
+
+    function draw(e) {
+        if (!isDrawing) return;
+        e.preventDefault();
+        const pos = getPos(e);
+        
+        ctx.beginPath();
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        
+        lastX = pos.x;
+        lastY = pos.y;
+    }
+
+    function stopDrawing(e) {
+        if (isDrawing) {
+            isDrawing = false;
+            signatureData.value = canvas.toDataURL();
+        }
+    }
+
+    // Initialize when modal is shown
+    const modal = document.getElementById('signatureModal');
+    if (modal) {
+        modal.addEventListener('shown.bs.modal', function() {
+            setTimeout(initCanvas, 100);
+        });
+        
+        modal.addEventListener('hidden.bs.modal', function() {
+            signatureData.value = '';
+            uploadInput.value = '';
+        });
+    }
+
+    // Mouse events
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing);
+
+    // Touch events
+    canvas.addEventListener('touchstart', startDrawing);
+    canvas.addEventListener('touchmove', draw);
+    canvas.addEventListener('touchend', stopDrawing);
+
+    // Clear signature
+    clearBtn.addEventListener('click', function() {
+        if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            signatureData.value = '';
+        }
+    });
+
+    // Upload signature
+    uploadBtn.addEventListener('click', function() {
+        uploadInput.click();
+    });
+
+    uploadInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    if (ctx) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        
+                        const rect = canvas.getBoundingClientRect();
+                        const scale = Math.min(rect.width / img.width, rect.height / img.height);
+                        const x = (rect.width - img.width * scale) / 2;
+                        const y = (rect.height - img.height * scale) / 2;
+                        
+                        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+                        signatureData.value = canvas.toDataURL();
+                    }
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+})();
+
+// Modal and submit handling
+const signatureModal = new bootstrap.Modal(document.getElementById('signatureModal'));
+const btnSubmit = document.getElementById('btnSubmit');
+const confirmSubmit = document.getElementById('confirmSubmit');
+
+// Show signature modal when submit button is clicked
+btnSubmit.addEventListener('click', function(e) {
+    e.preventDefault();
+    
+    // Validate form fields first
+    const form = document.getElementById('leaveForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+    
+    // Clear previous signature and show modal
+    const canvas = document.getElementById('signatureCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    document.getElementById('signatureData').value = '';
+    
+    signatureModal.show();
+});
+
+// Confirm submit with signature
+confirmSubmit.addEventListener('click', function() {
+    const signatureData = document.getElementById('signatureData').value;
+    
+    if (!signatureData) {
+        alert('Please sign or upload your signature before submitting.');
+        return;
+    }
+    
+    signatureModal.hide();
+    document.getElementById('leaveForm').submit();
+});
+
 (function() {
   const $leaveType = $('#leave_type_id');
   const $days = $('#working_days_requested');
