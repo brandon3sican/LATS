@@ -12,21 +12,22 @@
             <i class="bi bi-list"></i>
         </button>
 
-        <a class="navbar-brand d-flex align-items-center gap-2" href="{{ route('dashboard') }}">
+        <a class="navbar-brand d-flex align-items-center gap-3" href="{{ route('dashboard') }}">
             <img src="{{ asset('images/denr_logo.png') }}"
                  alt="DENR Logo"
-                 style="height: 40px; width: auto;">
+                 class="denr-logo"
+                 style="height: 45px; width: auto;">
 
-            <div class="d-flex flex-column" style="line-height: 1;">
-                <span class="fw-bold" style="font-size: 1.1rem;">DENR</span>
+            <div class="d-flex flex-column justify-content-center">
+                <span class="fw-bold text-primary" style="font-size: 1.25rem; letter-spacing: 0.5px;">DENR</span>
+                <span class="fw-semibold text-secondary" style="font-size: 0.7rem; letter-spacing: 1px;">
+                    {{-- Shows only on Medium screens and larger (Laptops/Desktops) --}}
+                    <span class="d-none d-md-inline">Leave Application Tracking System</span>
+
+                    {{-- Shows only on Small screens (Mobile Phones) --}}
+                    <span class="d-inline d-md-none">LATS</span>
+                </span>
             </div>
-            <span class="fw-bold badge text-bg-light border" style="font-size: 1rem;">
-                {{-- Shows only on Medium screens and larger (Laptops/Desktops) --}}
-                <span class="d-none d-md-inline">Leave Application Tracking System</span>
-
-                {{-- Shows only on Small screens (Mobile Phones) --}}
-                <span class="d-inline d-md-none">LATS</span>
-            </span>
         </a>
 
         <div class="ms-auto d-flex align-items-center gap-3">
@@ -86,6 +87,15 @@
                             <i class="bi bi-person-badge me-2"></i> My Profile
                         </a>
                     </li>
+
+                    @if($user->hasAnyRole(['approver_chief_personnel', 'approver_ard_ms']))
+                    <li>
+                        <a class="dropdown-item" href="{{ route('approver.google2fa.setup') }}">
+                            <i class="bi bi-shield-lock me-2"></i> Google Authenticator
+                        </a>
+                    </li>
+                    @endif
+
                     <li><hr class="dropdown-divider"></li>
 
                     <li>

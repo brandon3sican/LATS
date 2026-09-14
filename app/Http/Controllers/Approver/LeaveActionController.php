@@ -111,7 +111,10 @@ class LeaveActionController extends Controller
             $request
         );
 
-        return view('approver.review', compact('leave', 'timeline', 'credits', 'history', 'canAction'));
+        // Check if user requires OTP verification (Chief Personnel or ARD)
+        $requiresOtp = $user->hasAnyRole(['approver_chief_personnel', 'approver_ard_ms']);
+
+        return view('approver.review', compact('leave', 'timeline', 'credits', 'history', 'canAction', 'requiresOtp'));
     }
 
     public function action(Request $request, int $id)
@@ -149,6 +152,17 @@ class LeaveActionController extends Controller
 
         // If this is an approval action by a user who requires OTP verification
         if ($action === 'approved' && $requiresOtp) {
+            // Check if signature is already stored (from previous OTP verification)
+            if ($leave->temporary_signature) {
+                // Signature already verified via OTP or Google Authenticator
+                // Use the stored signature directly
+                $signatureData = $leave->temporary_signature;
+                $leave->update(['temporary_signature' => null]);
+
+                // Complete the approval with the stored signature
+                return $this->completeApprovalWithData($leave, $user, $action, $remarks, $signatureData);
+            }
+
             // Process signature and store temporarily
             $signatureData = $this->processSignature($request, $user);
 
@@ -164,6 +178,9 @@ class LeaveActionController extends Controller
                 'remarks' => $remarks,
                 'expires_at' => now()->addMinutes(10)->toIso8601String(),
             ]);
+
+            // Store signature in leave application for OTP verification
+            $leave->update(['temporary_signature' => $signatureData]);
 
             // Return JSON response indicating OTP is required
             if ($request->expectsJson()) {
@@ -187,7 +204,7 @@ class LeaveActionController extends Controller
         $user = $request->user();
         $user->loadMissing('roles', 'employee');
 
-        // OTP is already verified by OtpController, no need to verify again
+        // 2FA verification (email OTP or Google Authenticator) is already done by OtpController
         // Just retrieve the temporary signature from the leave application
         $leave = LeaveApplication::with('employee.user')->lockForUpdate()->findOrFail($id);
         $this->authorizeAction($user, $leave);

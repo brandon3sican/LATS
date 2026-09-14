@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\OneTimePassword;
+use App\Services\Google2faService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -27,6 +28,10 @@ class User extends Authenticatable
         'password',
         'is_first_login',
         'signature_path',
+        'google2fa_secret',
+        'google2fa_enabled',
+        'google2fa_recovery_codes',
+        'google2fa_enabled_at',
     ];
 
     protected $hidden = [
@@ -179,5 +184,136 @@ class User extends Authenticatable
             ->where('used', false)
             ->where('expires_at', '>', now())
             ->exists();
+    }
+
+    // Google Authenticator Methods
+    public function enableGoogle2fa(): string
+    {
+        $google2fa = new Google2faService();
+        $secret = $google2fa->generateSecret();
+        $encryptedSecret = $google2fa->encryptSecret($secret);
+
+        $this->google2fa_secret = $encryptedSecret;
+        $this->google2fa_enabled = false; // Not enabled until verified
+        $this->google2fa_recovery_codes = $this->generateRecoveryCodes();
+        $this->save();
+
+        return $secret; // Return plain secret for QR code generation
+    }
+
+    public function confirmGoogle2fa(string $code): bool
+    {
+        $google2fa = new Google2faService();
+        $secret = $google2fa->decryptSecret($this->google2fa_secret);
+
+        if ($google2fa->verifyCode($secret, $code)) {
+            $this->google2fa_enabled = true;
+            $this->google2fa_enabled_at = now();
+            $this->save();
+            return true;
+        }
+
+        return false;
+    }
+
+    public function disableGoogle2fa(): void
+    {
+        $this->google2fa_secret = null;
+        $this->google2fa_enabled = false;
+        $this->google2fa_recovery_codes = null;
+        $this->google2fa_enabled_at = null;
+        $this->save();
+    }
+
+    public function verifyGoogle2faCode(string $code): bool
+    {
+        if (!$this->google2fa_enabled || !$this->google2fa_secret) {
+            return false;
+        }
+
+        $google2fa = new Google2faService();
+        $secret = $google2fa->decryptSecret($this->google2fa_secret);
+
+        // Debug: log what codes we're generating
+        $currentCode = $google2fa->generateCode($secret);
+        \Log::info('Google2fa code comparison', [
+            'user_id' => $this->id,
+            'user_code' => $code,
+            'generated_code' => $currentCode,
+            'match' => hash_equals($currentCode, $code),
+        ]);
+
+        return $google2fa->verifyCode($secret, $code);
+    }
+
+    public function hasGoogle2faEnabled(): bool
+    {
+        return $this->google2fa_enabled && !empty($this->google2fa_secret);
+    }
+
+    public function getGoogle2faSecret(): ?string
+    {
+        if (!$this->google2fa_secret) {
+            return null;
+        }
+
+        $google2fa = new Google2faService();
+        return $google2fa->decryptSecret($this->google2fa_secret);
+    }
+
+    public function getGoogle2faQrCodeUrl(): ?string
+    {
+        if (!$this->google2fa_secret) {
+            return null;
+        }
+
+        $google2fa = new Google2faService();
+        $secret = $google2fa->decryptSecret($this->google2fa_secret);
+
+        return $google2fa->getQrCodeUrl($secret, $this->email, 'LATS');
+    }
+
+    public function generateRecoveryCodes(): array
+    {
+        $codes = [];
+        for ($i = 0; $i < 10; $i++) {
+            $codes[] = strtoupper(str_pad(random_int(0, 99999999), 8, '0', STR_PAD_LEFT));
+        }
+        return $codes;
+    }
+
+    public function verifyRecoveryCode(string $code): bool
+    {
+        if (!$this->google2fa_recovery_codes) {
+            return false;
+        }
+
+        // Handle both string (from database) and array (from manual handling)
+        $recoveryCodes = is_string($this->google2fa_recovery_codes)
+            ? json_decode($this->google2fa_recovery_codes, true)
+            : $this->google2fa_recovery_codes;
+
+        $code = strtoupper(trim($code));
+
+        if (($key = array_search($code, $recoveryCodes)) !== false) {
+            // Remove used recovery code
+            unset($recoveryCodes[$key]);
+            $this->google2fa_recovery_codes = json_encode(array_values($recoveryCodes));
+            $this->save();
+            return true;
+        }
+
+        return false;
+    }
+
+    public function getRemainingRecoveryCodes(): array
+    {
+        if (!$this->google2fa_recovery_codes) {
+            return [];
+        }
+
+        // Always decode since the field stores JSON strings
+        $decoded = json_decode($this->google2fa_recovery_codes, true);
+        return is_array($decoded) ? $decoded : [];
     }
 }

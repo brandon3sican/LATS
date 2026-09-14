@@ -6,6 +6,7 @@ use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\SignatureController;
 use App\Http\Controllers\OtpController;
+use App\Http\Controllers\Google2faController;
 
 // Admin Controllers
 use App\Http\Controllers\Admin\ReportController as AdminReportController;
@@ -163,6 +164,16 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/otp/send/{id}', [OtpController::class, 'sendOtp'])->name('otp.send');
             Route::post('/otp/verify/{id}', [OtpController::class, 'verifyOtp'])->name('otp.verify');
             Route::post('/otp/resend/{id}', [OtpController::class, 'resendOtp'])->name('otp.resend');
+            Route::post('/otp/verify-google2fa/{id}', [OtpController::class, 'verifyGoogle2fa'])->name('otp.verifyGoogle2fa');
+
+            // Google Authenticator Routes
+            Route::get('/google2fa/setup', [Google2faController::class, 'showSetup'])->name('google2fa.setup');
+            Route::post('/google2fa/enable', [Google2faController::class, 'enable'])->name('google2fa.enable');
+            Route::post('/google2fa/confirm', [Google2faController::class, 'confirmSetup'])->name('google2fa.confirm');
+            Route::post('/google2fa/disable', [Google2faController::class, 'disable'])->name('google2fa.disable');
+            Route::post('/google2fa/verify', [Google2faController::class, 'verifyCode'])->name('google2fa.verify');
+            Route::get('/google2fa/recovery-codes', [Google2faController::class, 'showRecoveryCodes'])->name('google2fa.recovery-codes');
+            Route::post('/google2fa/regenerate-codes', [Google2faController::class, 'regenerateRecoveryCodes'])->name('google2fa.regenerate-codes');
 
             Route::get('/reports', [ApproverReportController::class, 'index'])->name('reports.index');
             Route::get('/reports/my-actions', [ApproverReportController::class, 'myActions'])->name('reports.myActions');

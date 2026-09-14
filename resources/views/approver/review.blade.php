@@ -531,12 +531,31 @@
                                 <div id="otpSection" class="d-none">
                                     <div class="alert alert-info border-0 bg-info bg-opacity-10">
                                         <i class="bi bi-shield-lock me-2"></i>
-                                        <strong>Step 3:</strong> OTP Verification Required
+                                        <strong>Step 3:</strong> Two-Factor Authentication Required
                                     </div>
 
-                                    <p class="mb-3">For enhanced security, please verify your approval using a one-time password (OTP) sent to your email.</p>
+                                    <p class="mb-3">For enhanced security, please verify your approval using two-factor authentication.</p>
 
+                                    {{-- 2FA Method Selection --}}
                                     <div class="card mb-3">
+                                        <div class="card-body">
+                                            <label class="form-label fw-semibold">Choose Verification Method</label>
+                                            <div class="btn-group w-100" role="group">
+                                                <input type="radio" class="btn-check" name="2faMethod" id="methodEmail" value="email" autocomplete="off" checked onclick="var emailSection=document.getElementById('emailOtpSection'); var googleSection=document.getElementById('google2faSection'); if(emailSection) emailSection.classList.remove('d-none'); if(googleSection) googleSection.classList.add('d-none');">
+                                                <label class="btn btn-outline-primary" for="methodEmail">
+                                                    <i class="bi bi-envelope me-1"></i> Email OTP
+                                                </label>
+
+                                                <input type="radio" class="btn-check" name="2faMethod" id="methodGoogle" value="google2fa" autocomplete="off" onclick="var emailSection=document.getElementById('emailOtpSection'); var googleSection=document.getElementById('google2faSection'); if(emailSection) emailSection.classList.add('d-none'); if(googleSection) googleSection.classList.remove('d-none');">
+                                                <label class="btn btn-outline-primary" for="methodGoogle">
+                                                    <i class="bi bi-phone me-1"></i> Google Authenticator
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {{-- Email OTP Section --}}
+                                    <div id="emailOtpSection" class="card mb-3 d-none">
                                         <div class="card-body">
                                             <div class="mb-3">
                                                 <label class="form-label fw-semibold">Email Address</label>
@@ -548,6 +567,10 @@
                                                 <button type="button" class="btn btn-primary w-100" id="sendOtpBtn">
                                                     <i class="bi bi-envelope me-1"></i> Send OTP Code
                                                 </button>
+                                                <div class="alert alert-warning mt-3 mb-0">
+                                                    <i class="bi bi-exclamation-triangle me-2"></i>
+                                                    <strong>Important:</strong> Check your spam/junk folder if you don't receive the OTP within a minute.
+                                                </div>
                                             </div>
 
                                             <div id="otpInputSection" class="d-none">
@@ -564,9 +587,30 @@
                                         </div>
                                     </div>
 
+                                    {{-- Google Authenticator Section --}}
+                                    <div id="google2faSection" class="card mb-3 d-none">
+                                        <div class="card-body">
+                                            <div class="alert alert-success border-0 bg-success bg-opacity-10">
+                                                <i class="bi bi-phone me-2"></i>
+                                                <strong>Google Authenticator Enabled</strong>
+                                            </div>
+
+                                            <div class="mb-3">
+                                                <label class="form-label fw-semibold">Enter Google Authenticator Code</label>
+                                                <input type="text" id="google2faCode" class="form-control text-center fs-4 fw-bold" maxlength="8" placeholder="000000" style="letter-spacing: 8px;">
+                                                <small class="text-muted d-block mt-2">Enter the 6 or 8-digit code from your Google Authenticator app</small>
+                                            </div>
+
+                                            <div class="alert alert-info small">
+                                                <i class="bi bi-info-circle me-1"></i>
+                                                The code changes every 30 seconds. Make sure to enter the current code.
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <div class="alert alert-warning small">
                                         <i class="bi bi-exclamation-triangle me-1"></i>
-                                        <strong>Important:</strong> The OTP code will expire in 5 minutes and can only be used once.
+                                        <strong>Important:</strong> The verification code will expire and can only be used once.
                                     </div>
 
                                     <div class="d-flex gap-2">
@@ -1178,8 +1222,12 @@
         // OTP Functionality (for Chief Personnel and ARD)
         const requiresOtp = {{ $requiresOtp ? 'true' : 'false' }};
         const leaveId = {{ $leave->id }};
+        const hasGoogle2faEnabled = {{ auth()->user()->hasGoogle2faEnabled() ? 'true' : 'false' }};
         let resendCountdown = 30;
         let resendTimer = null;
+        let current2faMethod = 'email'; // default to email
+
+        console.log('OTP Debug:', { requiresOtp, leaveId, hasGoogle2faEnabled });
 
         // Countdown timer for resend button
         window.startResendCountdown = function() {
@@ -1187,14 +1235,14 @@
             const resendBtn = document.getElementById('resendOtpBtn');
             if (resendBtn) {
                 resendBtn.disabled = true;
-                resendBtn.innerHTML = `<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP (${resendCountdown}s)`;
+                resendBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP (' + resendCountdown + 's)';
             }
 
             if (resendTimer) {
                 clearInterval(resendTimer);
             }
 
-            resendTimer = setInterval(() => {
+            resendTimer = setInterval(function() {
                 resendCountdown--;
                 if (resendCountdown <= 0) {
                     clearInterval(resendTimer);
@@ -1205,182 +1253,293 @@
                     }
                 } else {
                     if (resendBtn) {
-                        resendBtn.innerHTML = `<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP (${resendCountdown}s)`;
+                        resendBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP (' + resendCountdown + 's)';
                     }
                 }
             }, 1000);
         };
 
         if (requiresOtp) {
+            // Method selection event listeners
+            var methodEmail = document.getElementById('methodEmail');
+            var methodGoogle = document.getElementById('methodGoogle');
+            var emailOtpSection = document.getElementById('emailOtpSection');
+            var google2faSection = document.getElementById('google2faSection');
 
-        // Send OTP
-        const sendOtpBtn = document.getElementById('sendOtpBtn');
-        if (sendOtpBtn) {
-            sendOtpBtn.addEventListener('click', function() {
-                const btn = this;
-                btn.disabled = true;
-                btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Sending...';
+            console.log('Method elements:', { methodEmail, methodGoogle, emailOtpSection, google2faSection });
 
-                // Get signature data
-                const signatureData = document.getElementById('signatureData').value;
+            if (methodEmail) {
+                methodEmail.addEventListener('change', function() {
+                    console.log('Email method selected');
+                    if (emailOtpSection) emailOtpSection.classList.remove('d-none');
+                    if (google2faSection) google2faSection.classList.add('d-none');
+                });
+            }
 
-                fetch(`{{ route('approver.otp.send', $leave->id) }}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                    },
-                    body: JSON.stringify({
-                        signature: signatureData
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        const otpSendSection = document.getElementById('otpSendSection');
-                        const otpInputSection = document.getElementById('otpInputSection');
-                        const verifyOtpBtn = document.getElementById('verifyOtpBtn');
-                        if (otpSendSection) otpSendSection.classList.add('d-none');
-                        if (otpInputSection) otpInputSection.classList.remove('d-none');
-                        if (verifyOtpBtn) verifyOtpBtn.disabled = false;
-                        startResendCountdown();
-                    } else {
-                        alert(data.message || 'Failed to send OTP. Please try again.');
+            if (methodGoogle) {
+                methodGoogle.addEventListener('change', function() {
+                    console.log('Google method selected');
+                    if (emailOtpSection) emailOtpSection.classList.add('d-none');
+                    if (google2faSection) google2faSection.classList.remove('d-none');
+                });
+            }
+
+            // Show email OTP section by default since it's checked
+            if (emailOtpSection) {
+                setTimeout(function() {
+                    emailOtpSection.classList.remove('d-none');
+                }, 100);
+            }
+
+            // Attach OTP event listeners directly - elements exist in DOM even when hidden
+            // Send OTP
+            var sendOtpBtn = document.getElementById('sendOtpBtn');
+            console.log('Send OTP Button found:', sendOtpBtn);
+            if (sendOtpBtn) {
+                sendOtpBtn.onclick = function() {
+                    console.log('Send OTP button clicked');
+                    var btn = this;
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Sending...';
+
+                    var signatureData = document.getElementById('signatureData').value;
+                    console.log('Signature data:', signatureData ? 'found' : 'not found');
+
+                    var formData = new FormData();
+                    formData.append('signature', signatureData);
+                    formData.append('_token', document.querySelector('meta[name="csrf-token"]').content);
+
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('POST', '/approver/otp/send/' + leaveId, true);
+                    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                    xhr.onload = function() {
+                        console.log('XHR response status:', xhr.status);
+                        console.log('XHR response:', xhr.responseText);
+                        if (xhr.status === 200) {
+                            try {
+                                var data = JSON.parse(xhr.responseText);
+                                if (data.success) {
+                                    var otpSendSection = document.getElementById('otpSendSection');
+                                    var otpInputSection = document.getElementById('otpInputSection');
+                                    var verifyOtpBtn = document.getElementById('verifyOtpBtn');
+                                    if (otpSendSection) otpSendSection.classList.add('d-none');
+                                    if (otpInputSection) otpInputSection.classList.remove('d-none');
+                                    if (verifyOtpBtn) verifyOtpBtn.disabled = false;
+                                    startResendCountdown();
+                                } else {
+                                    alert(data.message || 'Failed to send OTP. Please try again.');
+                                    btn.disabled = false;
+                                    btn.innerHTML = '<i class="bi bi-envelope me-1"></i> Send OTP Code';
+                                }
+                            } catch (e) {
+                                console.error('JSON parse error:', e);
+                                alert('Error parsing response. Please try again.');
+                                btn.disabled = false;
+                                btn.innerHTML = '<i class="bi bi-envelope me-1"></i> Send OTP Code';
+                            }
+                        } else {
+                            alert('Server error. Please try again.');
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="bi bi-envelope me-1"></i> Send OTP Code';
+                        }
+                    };
+                    xhr.onerror = function() {
+                        console.error('XHR error');
+                        alert('Network error. Please try again.');
                         btn.disabled = false;
                         btn.innerHTML = '<i class="bi bi-envelope me-1"></i> Send OTP Code';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error sending OTP:', error);
-                    alert('An error occurred. Please try again.');
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="bi bi-envelope me-1"></i> Send OTP Code';
-                });
-            });
-        }
+                    };
+                    xhr.send(formData);
+                };
+            } else {
+                console.error('Send OTP button not found!');
+            }
 
-        // Verify OTP
-        const verifyOtpBtn = document.getElementById('verifyOtpBtn');
-        if (verifyOtpBtn) {
-            verifyOtpBtn.addEventListener('click', function() {
-                const otpCodeInput = document.getElementById('otpCode');
-                const otpCode = otpCodeInput ? otpCodeInput.value.trim() : '';
+            // Verify OTP
+            var verifyOtpBtn = document.getElementById('verifyOtpBtn');
+            if (verifyOtpBtn) {
+                verifyOtpBtn.onclick = function() {
+                    // Check which method is selected
+                    var methodEmail = document.getElementById('methodEmail');
+                    var methodGoogle = document.getElementById('methodGoogle');
+                    var currentMethod = methodEmail && methodEmail.checked ? 'email' : 'google2fa';
 
-                if (otpCode.length !== 6) {
-                    alert('Please enter the 6-digit OTP code.');
-                    return;
-                }
+                    var code = '';
+                    var verificationUrl = '';
 
-                const btn = this;
-                btn.disabled = true;
-                btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Verifying...';
-
-                fetch(`{{ route('approver.otp.verify', $leave->id) }}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                    },
-                    body: JSON.stringify({
-                        otp: otpCode,
-                        leave_id: leaveId
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Store the temporary signature for final approval
-                        if (data.temporary_signature) {
-                            document.getElementById('signatureData').value = data.temporary_signature;
-                        }
-
-                        // Hide OTP section, show final confirmation
-                        const otpSection = document.getElementById('otpSection');
-                        const finalConfirmSection = document.getElementById('finalConfirmSection');
-                        if (otpSection) otpSection.classList.add('d-none');
-                        if (finalConfirmSection) finalConfirmSection.classList.remove('d-none');
+                    if (currentMethod === 'google2fa') {
+                        var google2faCodeInput = document.getElementById('google2faCode');
+                        code = google2faCodeInput ? google2faCodeInput.value.trim() : '';
+                        verificationUrl = '/approver/otp/verify-google2fa/' + leaveId;
                     } else {
-                        alert(data.message || 'Invalid OTP. Please try again.');
+                        var otpCodeInput = document.getElementById('otpCode');
+                        code = otpCodeInput ? otpCodeInput.value.trim() : '';
+                        verificationUrl = '/approver/otp/verify/' + leaveId;
+                    }
+
+                    if (currentMethod === 'google2fa') {
+                        if (code.length !== 6 && code.length !== 8) {
+                            alert('Please enter the 6 or 8-digit Google Authenticator code.');
+                            return;
+                        }
+                    } else {
+                        if (code.length !== 6) {
+                            alert('Please enter the 6-digit OTP code.');
+                            return;
+                        }
+                    }
+
+                    var btn = this;
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Verifying...';
+
+                    var formData = new FormData();
+                    formData.append('code', code);
+                    formData.append('_token', document.querySelector('meta[name="csrf-token"]').content);
+
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('POST', verificationUrl, true);
+                    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                    xhr.onload = function() {
+                        if (xhr.status === 200) {
+                            try {
+                                var data = JSON.parse(xhr.responseText);
+                                if (data.success) {
+                                    if (data.temporary_signature) {
+                                        document.getElementById('signatureData').value = data.temporary_signature;
+                                    }
+
+                                    var otpSection = document.getElementById('otpSection');
+                                    var finalConfirmSection = document.getElementById('finalConfirmSection');
+                                    if (otpSection) otpSection.classList.add('d-none');
+                                    if (finalConfirmSection) finalConfirmSection.classList.remove('d-none');
+                                } else {
+                                    alert(data.message || 'Invalid code. Please try again.');
+                                    btn.disabled = false;
+                                    btn.innerHTML = '<i class="bi bi-shield-check me-1"></i> Verify & Continue';
+                                }
+                            } catch (e) {
+                                alert('Error parsing response. Please try again.');
+                                btn.disabled = false;
+                                btn.innerHTML = '<i class="bi bi-shield-check me-1"></i> Verify & Continue';
+                            }
+                        } else if (xhr.status === 400) {
+                            try {
+                                var data = JSON.parse(xhr.responseText);
+                                alert(data.message || 'Wrong code. Please try again.');
+                            } catch (e) {
+                                alert('Wrong code. Please try again.');
+                            }
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="bi bi-shield-check me-1"></i> Verify & Continue';
+                        } else {
+                            alert('Server error. Please try again.');
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="bi bi-shield-check me-1"></i> Verify & Continue';
+                        }
+                    };
+                    xhr.onerror = function() {
+                        alert('Network error. Please try again.');
                         btn.disabled = false;
                         btn.innerHTML = '<i class="bi bi-shield-check me-1"></i> Verify & Continue';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error verifying OTP:', error);
-                    alert('An error occurred. Please try again.');
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="bi bi-shield-check me-1"></i> Verify & Continue';
-                });
-            });
-        }
+                    };
+                    xhr.send(formData);
+                };
+            }
 
-        // Resend OTP
-        const resendOtpBtn = document.getElementById('resendOtpBtn');
-        if (resendOtpBtn) {
-            resendOtpBtn.addEventListener('click', function() {
-                if (this.disabled) return;
+            // Resend OTP
+            var resendOtpBtn = document.getElementById('resendOtpBtn');
+            if (resendOtpBtn) {
+                resendOtpBtn.onclick = function() {
+                    if (this.disabled) return;
 
-                this.disabled = true;
-                this.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Sending...';
+                    this.disabled = true;
+                    this.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Sending...';
 
-                fetch(`{{ route('approver.otp.resend', $leave->id) }}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                    },
-                    body: JSON.stringify({})
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('New OTP sent successfully!');
-                        startResendCountdown();
-                    } else {
-                        alert(data.message || 'Failed to resend OTP. Please try again.');
+                    var formData = new FormData();
+                    formData.append('_token', document.querySelector('meta[name="csrf-token"]').content);
+
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('POST', '/approver/otp/resend/' + leaveId, true);
+                    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                    xhr.onload = function() {
+                        if (xhr.status === 200) {
+                            try {
+                                var data = JSON.parse(xhr.responseText);
+                                if (data.success) {
+                                    alert('New OTP sent successfully!');
+                                    startResendCountdown();
+                                } else {
+                                    alert(data.message || 'Failed to resend OTP. Please try again.');
+                                    this.disabled = false;
+                                    this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP';
+                                }
+                            } catch (e) {
+                                alert('Error parsing response. Please try again.');
+                                this.disabled = false;
+                                this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP';
+                            }
+                        } else {
+                            alert('Server error. Please try again.');
+                            this.disabled = false;
+                            this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP';
+                        }
+                    };
+                    xhr.onerror = function() {
+                        alert('Network error. Please try again.');
                         this.disabled = false;
                         this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP';
+                    };
+                    xhr.send(formData);
+                };
+            }
+
+            // Back to signature from OTP
+            var backToSignatureFromOtp = document.getElementById('backToSignatureFromOtp');
+            if (backToSignatureFromOtp) {
+                backToSignatureFromOtp.onclick = function() {
+                    document.getElementById('otpSection').classList.add('d-none');
+                    document.getElementById('signatureSection').classList.remove('d-none');
+                    var otpCode = document.getElementById('otpCode');
+                    if (otpCode) otpCode.value = '';
+                    var otpSendSection = document.getElementById('otpSendSection');
+                    var otpInputSection = document.getElementById('otpInputSection');
+                    if (otpSendSection) otpSendSection.classList.remove('d-none');
+                    if (otpInputSection) otpInputSection.classList.add('d-none');
+                    var verifyOtpBtn = document.getElementById('verifyOtpBtn');
+                    if (verifyOtpBtn) verifyOtpBtn.disabled = true;
+                    if (resendTimer) {
+                        clearInterval(resendTimer);
+                        resendTimer = null;
                     }
-                })
-                .catch(error => {
-                    console.error('Error resending OTP:', error);
-                    alert('An error occurred. Please try again.');
-                    this.disabled = false;
-                    this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP';
-                });
-            });
-        }
+                };
+            }
 
-        // Back to signature from OTP
-        const backToSignatureFromOtp = document.getElementById('backToSignatureFromOtp');
-        if (backToSignatureFromOtp) {
-            backToSignatureFromOtp.addEventListener('click', function() {
-                document.getElementById('otpSection').classList.add('d-none');
-                document.getElementById('signatureSection').classList.remove('d-none');
-                // Reset OTP input
-                const otpCode = document.getElementById('otpCode');
-                if (otpCode) otpCode.value = '';
-                const otpSendSection = document.getElementById('otpSendSection');
-                const otpInputSection = document.getElementById('otpInputSection');
-                if (otpSendSection) otpSendSection.classList.remove('d-none');
-                if (otpInputSection) otpInputSection.classList.add('d-none');
-                const verifyOtpBtn = document.getElementById('verifyOtpBtn');
-                if (verifyOtpBtn) verifyOtpBtn.disabled = true;
-                if (resendTimer) {
-                    clearInterval(resendTimer);
-                    resendTimer = null;
-                }
-            });
-        }
+            // OTP input formatting
+            var otpInput = document.getElementById('otpCode');
+            if (otpInput) {
+                otpInput.oninput = function(e) {
+                    this.value = this.value.replace(/\D/g, '').substring(0, 6);
+                    // Enable verify button when code is entered
+                    var verifyOtpBtn = document.getElementById('verifyOtpBtn');
+                    if (verifyOtpBtn) {
+                        verifyOtpBtn.disabled = this.value.length < 6;
+                    }
+                };
+            }
 
-        // OTP input formatting (auto-format to 6 digits)
-        const otpInput = document.getElementById('otpCode');
-        if (otpInput) {
-            otpInput.addEventListener('input', function(e) {
-                // Remove non-digit characters
-                this.value = this.value.replace(/\D/g, '').substring(0, 6);
-            });
-        }
+            // Google Authenticator input formatting
+            var google2faInput = document.getElementById('google2faCode');
+            if (google2faInput) {
+                google2faInput.oninput = function(e) {
+                    this.value = this.value.replace(/\D/g, '').substring(0, 8);
+                    // Enable verify button when code is entered
+                    var verifyOtpBtn = document.getElementById('verifyOtpBtn');
+                    if (verifyOtpBtn) {
+                        verifyOtpBtn.disabled = this.value.length < 6;
+                    }
+                };
+            }
         }
 
         // Handle final confirmation button
@@ -1390,9 +1549,10 @@
                 e.preventDefault();
 
                 if (requiresOtp) {
-                    // For OTP users, submit to the complete-with-otp endpoint
+                    // For OTP users, verification was already done (email OTP or Google Authenticator)
+                    // Submit to the normal approval endpoint with the signature data
                     const form = document.getElementById('actionForm');
-                    form.action = `{{ route('approver.leaves.completeWithOtp', $leave->id) }}`;
+                    form.action = `/approver/leaves/` + leaveId + `/action`;
                     form.method = 'POST';
 
                     // Add action field to form
@@ -1401,19 +1561,6 @@
                     actionInput.name = 'action';
                     actionInput.value = 'approved';
                     form.appendChild(actionInput);
-
-                    // Add OTP code to form
-                    const otpCodeInput = document.getElementById('otpCode');
-                    if (otpCodeInput && otpCodeInput.value) {
-                        const otpInput = document.createElement('input');
-                        otpInput.type = 'hidden';
-                        otpInput.name = 'otp';
-                        otpInput.value = otpCodeInput.value;
-                        form.appendChild(otpInput);
-                    } else {
-                        alert('Please enter the OTP code before confirming.');
-                        return;
-                    }
 
                     // Submit the form
                     form.submit();

@@ -27,16 +27,33 @@
     {{-- User Info Section --}}
     <a class="lais-side-user text-decoration-none text-reset" href="{{ route('employee.profile.show') }}"
         title="View My Profile & Signature">
-        <div class="lais-avatar">
-            {{ strtoupper(substr($user->name, 0, 1)) }}
-        </div>
-        <div class="flex-grow-1">
-            <div class="fw-semibold">{{ $user->name }}</div>
-            <div class="text-muted small">
-                @foreach ($user->roles as $r)
-                    <span class="badge text-bg-light border me-1">{{ str_replace('_', ' ', strtoupper($r->key)) }}</span>
-                @endforeach
+        <div class="lais-avatar-wrapper">
+            <div class="lais-avatar">
+                {{ strtoupper(substr($user->name, 0, 1)) }}
             </div>
+            <div class="lais-avatar-glow"></div>
+        </div>
+        <div class="lais-user-info">
+            <div class="lais-user-name">{{ $user->name }}</div>
+            <div class="lais-user-roles">
+                @php
+                    $roles = $user->roles->pluck('key')->map(fn($key) => str_replace('_', ' ', ucfirst($key)))->toArray();
+                    $primaryRole = $roles[0] ?? 'User';
+                    $additionalRoles = count($roles) > 1 ? array_slice($roles, 1) : [];
+                @endphp
+                <div class="lais-primary-role">
+                    <i class="bi bi-shield-check"></i>
+                    <span>{{ $primaryRole }}</span>
+                </div>
+                @if(count($additionalRoles) > 0)
+                    <div class="lais-additional-roles" title="{{ implode(', ', $additionalRoles) }}">
+                        <span class="lais-role-count">+{{ count($additionalRoles) }}</span>
+                    </div>
+                @endif
+            </div>
+        </div>
+        <div class="lais-user-action">
+            <i class="bi bi-arrow-right-circle"></i>
         </div>
     </a>
 

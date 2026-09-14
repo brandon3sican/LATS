@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Google2faRequest;
 use App\Http\Requests\OtpRequest;
 use App\Models\LeaveApplication;
 use App\Models\OneTimePassword;
@@ -56,10 +57,13 @@ class OtpController extends Controller
                 ], 400);
             }
 
-            // Store signature temporarily
-            $signature = $request->input('signature');
-            if ($signature) {
-                $leave->update(['temporary_signature' => $signature]);
+            // Signature should already be stored by LeaveActionController
+            // Just verify it exists
+            if (!$leave->temporary_signature) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Signature not found. Please start the approval process again.',
+                ], 400);
             }
 
             // Generate OTP
@@ -197,5 +201,99 @@ class OtpController extends Controller
     {
         // Reuse sendOtp method with the same rate limiting
         return $this->sendOtp($request, $leaveId);
+    }
+
+    public function verifyGoogle2fa(Request $request, int $leaveId)
+    {
+        try {
+            /** @var \App\Models\User $user */
+            $user = Auth::user();
+            $user->loadMissing('roles', 'employee');
+
+            $code = $request->input('code');
+
+            \Log::info('Google2fa verification attempt', [
+                'user_id' => $user->id,
+                'leave_id' => $leaveId,
+                'code' => $code,
+                'code_length' => strlen($code),
+                'has_google2fa_enabled' => $user->google2fa_enabled,
+                'has_google2fa_secret' => !empty($user->google2fa_secret),
+            ]);
+
+            // Rate limiting: max 5 verification attempts per OTP
+            $key = 'google2fa-verify:' . $user->id . ':' . $leaveId;
+            if (RateLimiter::tooManyAttempts($key, 5)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Too many verification attempts. Please try again later.',
+                ], 429);
+            }
+
+            RateLimiter::hit($key, 300); // 5 minutes
+
+            // Verify Google Authenticator code
+            if (!$user->verifyGoogle2faCode($code)) {
+                \Log::info('Google2fa verification failed', [
+                    'user_id' => $user->id,
+                    'code' => $code,
+                ]);
+
+                try {
+                    $this->auditLogService->logCustom(
+                        $user,
+                        'google2fa_verification_failed',
+                        "Failed Google Authenticator verification for leave application #{$leaveId}",
+                        [
+                            'leave_id' => $leaveId,
+                            'reason' => 'Invalid or expired code',
+                        ],
+                        $request
+                    );
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::error('Failed to log Google Authenticator verification failure: ' . $e->getMessage());
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid or expired code. Please try again.',
+                ], 400);
+            }
+
+            // Log successful Google Authenticator verification
+            try {
+                $this->auditLogService->logCustom(
+                    $user,
+                    'google2fa_verified',
+                    "Google Authenticator verified successfully for leave application #{$leaveId}",
+                    [
+                        'leave_id' => $leaveId,
+                    ],
+                    $request
+                );
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('Failed to log Google Authenticator verification success: ' . $e->getMessage());
+            }
+
+            // Return the temporary signature in the response so it can be used for final approval
+            $leave = LeaveApplication::find($leaveId);
+            $temporarySignature = $leave->temporary_signature ?? null;
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Google Authenticator verified successfully. You can now complete the approval.',
+                'temporary_signature' => $temporarySignature,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Google2fa verification error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }
