@@ -1,0 +1,187 @@
+# OTP Implementation Plan (COMPLETED)
+
+## Overview
+Implemented a secure OTP approval system using a **custom OTP implementation** (due to package installation issues) for leave application approvals. The system requires digital signature first, then OTP verification (via email) as the final step for Chief Personnel and ARD roles before the leave application moves to the next approval step or final approval.
+
+**Important Note**: OTP codes are sent to the approver's email address and may end up in the spam/junk folder. Users should check their spam folder if they don't receive the OTP within a minute.
+
+## Implementation Details
+
+### 1. Custom OTP System (Instead of Spatie Package)
+- **Reason**: Spatie package installation failed due to Composer/environment issues
+- **Solution**: Built custom OTP system with database storage
+- **Table**: `lats_otp_table` (custom table name to avoid prefix conflicts)
+- **Expiration**: 30 minutes (increased from 5 minutes for better UX)
+- **Rate Limiting**: 3 OTP sends per 5 minutes, 5 verification attempts per OTP
+
+### 2. Database Schema Changes
+- **Custom table**: `lats_otp_table` with columns:
+  - `id` (primary key)
+  - `user_id` (foreign key to users)
+  - `code` (6-digit OTP)
+  - `expires_at` (timestamp)
+  - `ip_address` (for same-origin enforcement)
+  - `user_agent` (for same-origin enforcement)
+  - `used` (boolean, default false)
+  - `created_at`, `updated_at`
+- **Temporary signature column**: Added `temporary_signature` to `lats_leave_applications` table
+
+### 3. Model Preparation
+- **User model**: Added custom methods:
+  - `generateOneTimePassword(int $expiresInMinutes = 5): OneTimePassword`
+  - `consumeOneTimePassword(string $code): bool`
+  - `hasValidOneTimePassword(): bool`
+- **OneTimePassword model**: Custom Eloquent model for OTP management
+- **Raw SQL queries**: Used to avoid Laravel table prefix conflicts
+
+### 4. Email Notification Implementation
+- **Custom notification**: `App\Notifications\ApprovalOtpNotification`
+- **Email template**: `resources/views/emails/approval-otp.blade.php`
+- **Content**: Includes OTP code, leave application details, employee name, leave type, expiration time
+- **Uses**: Laravel's built-in mail system
+
+### 5. Controller Modifications
+- **OtpController**: New controller for OTP operations:
+  - `sendOtp()` - Generate OTP, store temporary signature, send email
+  - `verifyOtp()` - Validate OTP, return temporary signature for final approval
+  - `resendOtp()` - Resend OTP by calling sendOtp
+- **LeaveActionController**: Modified to handle OTP flow:
+  - Removed duplicate OTP verification (was causing double consumption)
+  - Simplified `completeApprovalWithOtp()` to use temporary signature
+  - Added session facade import for proper namespace
+
+### 6. Route Definitions
+- Added routes in `routes/web.php`:
+  - `POST /approver/otp/send/{id}` - Send OTP after signature
+  - `POST /approver/otp/verify/{id}` - Verify OTP code
+  - `POST /approver/otp/resend/{id}` - Resend OTP
+
+### 7. View Updates
+- **review.blade.php**: Updated approval modal flow:
+  - Signature collection (existing UI)
+  - OTP verification section for Chief Personnel and ARD roles
+  - "Send OTP" button after signature
+  - OTP input field (6 digits)
+  - "Resend OTP" button with countdown timer
+  - Loading states and error messages
+  - Email address display
+  - Single-step flow preserved for Division Chief and Personnel roles
+- **Important Note**: OTP codes are sent to the approver's email address and may end up in the spam folder. Users should check their spam/junk folder if they don't receive the OTP within a minute.
+
+### 8. Temporary Signature Storage
+- **Implementation**: Added `temporary_signature` column to `lats_leave_applications` table
+- **Flow**: 
+  1. Signature sent with OTP request → stored in `temporary_signature`
+  2. OTP verified → temporary signature returned to frontend
+  3. Final approval → temporary signature used and cleared
+- **Cleanup**: Cleared after successful approval
+
+### 9. Security and Validation
+- **Request validation**: `OtpRequest` validates 6-digit OTP format
+- **Rate limiting**: 
+  - OTP send: 3 requests per 5 minutes per user per leave
+  - OTP verify: 5 attempts per OTP per user per leave
+- **Audit logging**: Custom logging via `AuditLogService` for all OTP operations
+- **Role enforcement**: Middleware ensures only Chief Personnel and ARD can use OTP
+- **Same-origin enforcement**: IP address and user agent validation (temporarily disabled for testing)
+- **OTP cleanup**: Expired OTPs cleaned up when generating new OTPs
+
+### 10. Implementation Challenges Resolved
+- **Table prefix conflicts**: Used raw SQL with exact table names to avoid Laravel prefix issues
+- **Double OTP consumption**: Removed duplicate verification logic from LeaveActionController
+- **Timezone issues**: Used MySQL NOW() function for consistent time comparisons
+- **OTP invalidation**: Simplified to delete expired OTPs instead of marking as used
+- **Rate limiting**: Cleared cache during testing to reset limits
+
+## Files Created/Modified
+
+### New Files
+- `app/Notifications/ApprovalOtpNotification.php` - Custom email notification
+- `app/Http/Controllers/OtpController.php` - OTP handling controller
+- `app/Http/Requests/OtpRequest.php` - OTP validation request
+- `app/Models/OneTimePassword.php` - OTP model
+- `resources/views/emails/approval-otp.blade.php` - Email template
+- `database/migrations/2026_09_07_000001_create_one_time_passwords_table.php` - OTP table migration
+
+### Modified Files
+- `app/Models/User.php` - Added custom OTP methods
+- `app/Http/Controllers/Approver/LeaveActionController.php` - Modified approval flow
+- `resources/views/approver/review.blade.php` - Added OTP verification UI
+- `routes/web.php` - Added OTP routes
+- `routes/console.php` - Added OTP cleanup scheduling
+- `app/Services/AuditLogService.php` - Enhanced for OTP logging
+- `app/Models/LeaveApplication.php` - Added temporary_signature to fillable
+
+## Verification Status
+- [x] Custom OTP table created and configured
+- [x] Email notification implemented and tested
+- [x] Temporary signature storage implemented
+- [x] OTP generation working
+- [x] OTP verification working
+- [x] Rate limiting implemented
+- [x] Audit logging implemented
+- [x] Frontend OTP UI implemented
+- [x] Role-based OTP enforcement working
+- [x] Database prefix conflicts resolved
+- [x] Duplicate verification issues resolved
+- [ ] Complete end-to-end testing of approval flow
+- [ ] Email delivery testing in production environment
+- [ ] Same-origin enforcement testing (currently disabled)
+- [ ] Security audit of custom implementation
+
+## Approval Flow Comparison
+
+### Chief Personnel and ARD (New Flow):
+1. Review leave application
+2. Provide digital signature
+3. Click "Proceed" → Signature stored temporarily in database
+4. Click "Send OTP" → OTP generated and sent to email
+5. Enter 6-digit OTP code
+6. Click "Verify OTP" → OTP validated, temporary signature returned
+7. Click "Complete Approval" → Final approval with signature
+8. Temporary signature cleared from database
+
+### Division Chief and Personnel (Existing Flow):
+1. Review leave application
+2. Provide digital signature
+3. Click "Complete Approval" → Approval completed directly
+
+## Technical Implementation Notes
+
+### Database Configuration
+- **Database**: `denr_lats_db`
+- **Table prefix**: `lats_`
+- **OTP table**: `lats_otp_table` (exact name to avoid prefix issues)
+- **Used raw SQL**: To bypass Laravel's prefix handling
+
+### Custom OTP Methods
+```php
+// Generate OTP
+$user->generateOneTimePassword(30); // 30 minutes expiration
+
+// Verify OTP
+$user->consumeOneTimePassword($code); // returns bool
+```
+
+### Key Implementation Decisions
+1. **Custom vs Package**: Chose custom implementation due to package installation failures
+2. **Database Storage**: Chose database over cache for better persistence
+3. **Temporary Signature**: Chose database column over session for better reliability
+4. **Expiration Time**: Increased to 30 minutes for better user experience
+5. **Same-Origin Enforcement**: Temporarily disabled for testing, can be re-enabled
+
+## Known Issues and Resolutions
+- **Table prefix conflicts**: Resolved by using raw SQL with exact table names
+- **Double OTP consumption**: Resolved by removing duplicate verification logic
+- **OTP being marked as used immediately**: Resolved by simplifying invalidation logic
+- **Rate limiting during testing**: Resolved by clearing cache manually
+- **Database migration conflicts**: Resolved by manually managing table creation
+
+## Future Improvements
+- Re-enable same-origin enforcement (IP + user agent validation)
+- Add SMS OTP as backup option
+- Implement OTP cleanup via Laravel scheduler
+- Add comprehensive unit tests
+- Implement email queue for better performance
+- Add OTP resend cooldown UI
+- Consider implementing the Spatie package if environment issues are resolved

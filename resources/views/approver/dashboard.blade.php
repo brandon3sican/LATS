@@ -3,6 +3,33 @@
 <div class="container py-4">
     <h3 class="mb-4">Approver Dashboard</h3>
 
+    {{-- DIVISION FILTER (Chief Personnel, Super Admin, Admin Only) --}}
+    @if((auth()->user()->hasRole('approver_chief_personnel') || auth()->user()->hasRole('super_admin') || auth()->user()->hasRole('admin')) && isset($divisions) && $divisions && $divisions->isNotEmpty())
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
+                    <form method="GET" action="{{ route('approver.dashboard') }}" class="d-flex gap-2 align-items-center">
+                        <label class="mb-0 fw-bold">Filter by Division:</label>
+                        <select name="division_id" class="form-select" style="width: 300px;">
+                            <option value="">All Divisions</option>
+                            @foreach ($divisions as $division)
+                                <option value="{{ $division->id }}" {{ $selectedDivision == $division->id ? 'selected' : '' }}>
+                                    {{ $division->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <button type="submit" class="btn btn-primary">Filter</button>
+                        @if ($selectedDivision)
+                            <a href="{{ route('approver.dashboard') }}" class="btn btn-outline-secondary">Clear</a>
+                        @endif
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+
 {{-- STATS ROW --}}
     @php
         // Determine column sizes based on role
@@ -91,6 +118,86 @@
         </div>
     </div>
 
+    {{-- EFFICIENCY METRICS ROW (Super Admin, Admin, Chief Personnel Only) --}}
+    @if((auth()->user()->hasRole('super_admin') || auth()->user()->hasRole('admin') || auth()->user()->hasRole('approver_chief_personnel')) && $efficiencyMetrics)
+    <div class="row g-3 mb-4">
+        {{-- Average Approval Time --}}
+        <div class="col-md-4 col-sm-12">
+            <div class="card shadow-sm border-start border-4 border-success h-100">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <div class="text-muted small text-uppercase fw-bold">Avg Approval Time</div>
+                        <div class="fs-1 fw-bold text-dark">{{ $efficiencyMetrics['avg_approval_time_formatted'] }}</div>
+                    </div>
+                    <i class="bi bi-clock-history fs-1 text-success"></i>
+                </div>
+                <div class="card-footer bg-white">
+                    <div class="small text-muted">
+                        Based on {{ $efficiencyMetrics['approved_count'] }} approved applications
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Average Step Response Time --}}
+        <div class="col-md-4 col-sm-12">
+            <div class="card shadow-sm border-start border-4 border-info h-100">
+                <div class="card-body">
+                    <div class="text-muted small text-uppercase fw-bold mb-2">Avg Step Response Time</div>
+                    @if(!empty($efficiencyMetrics['step_response_times']))
+                        @foreach($efficiencyMetrics['step_response_times'] as $step => $data)
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="small">Step {{ $step }}:</span>
+                                <span class="fw-bold">{{ $data['formatted'] }}</span>
+                            </div>
+                        @endforeach
+                    @else
+                        <div class="small text-muted">No step data available</div>
+                    @endif
+                </div>
+                <div class="card-footer bg-white">
+                    <div class="small text-muted">Per approval step</div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Approval Rate --}}
+        <div class="col-md-4 col-sm-12">
+            <div class="card shadow-sm border-start border-4 border-primary h-100">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <div class="text-muted small text-uppercase fw-bold">Approval Rate</div>
+                        <div class="fs-1 fw-bold text-dark">{{ $efficiencyMetrics['approval_rate'] }}%</div>
+                    </div>
+                    <i class="bi bi-graph-up-arrow fs-1 text-primary"></i>
+                </div>
+                <div class="card-footer bg-white">
+                    <div class="small text-muted">
+                        {{ $efficiencyMetrics['approved_count'] }} / {{ $efficiencyMetrics['total_applications'] }} approved
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Report Generation Link (Chief Personnel Only) --}}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-body d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="card-title mb-1"><i class="bi bi-file-earmark-bar-graph text-primary me-2"></i>Generate Reports</h5>
+                        <p class="card-text small text-muted mb-0">Create comprehensive efficiency metrics, audit trail, and combined analysis reports</p>
+                    </div>
+                    <a href="{{ url('/super/reports/generate') }}" class="btn btn-primary">
+                        <i class="bi bi-file-earmark-zip me-1"></i> Generate Reports
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+
     {{-- LEAVE CALENDAR ROW --}}
     <div class="row">
         <div class="col-12">
@@ -98,11 +205,18 @@
                 <div class="card-header bg-white py-3 fw-bold d-flex justify-content-between align-items-center flex-wrap">
                     <span><i class="bi bi-calendar-event text-primary me-2"></i> Division Leave Schedule</span>
                     <div class="small mt-2 mt-md-0">
-                        <span class="badge bg-success me-1">VL</span>
-                        <span class="badge bg-danger me-1">SL</span>
-                        <span class="badge bg-info text-dark me-1">SPL</span>
-                        <span class="badge" style="background-color: #d63384">ML</span>
-                        <span class="badge bg-secondary">Other</span>
+                        @if($isPersonnelRole)
+                            <span class="badge bg-success me-1"><i class="bi bi-check-circle me-1"></i>Approved</span>
+                            <span class="badge bg-warning text-dark me-1"><i class="bi bi-hourglass-split me-1"></i>Pending</span>
+                            <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Cancelled</span>
+                        @else
+                            <span class="badge bg-success me-1">VL</span>
+                            <span class="badge bg-danger me-1">SL</span>
+                            <span class="badge bg-info text-dark me-1">SPL</span>
+                            <span class="badge" style="background-color: #d63384">ML</span>
+                            <span class="badge bg-secondary me-2">Other</span>
+                            <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Pending</span>
+                        @endif
                     </div>
                 </div>
                 <div class="card-body d-flex justify-content-center bg-light py-4">
@@ -244,7 +358,7 @@
                 // Build the dots
                 let dotsHtml = '<div class="leave-dots-container">';
                 leavesData[dateStr].forEach(function(leave) {
-                    dotsHtml += `<span class="leave-dot" style="background-color: ${leave.color};" title="${leave.name} (${leave.leave_type})"></span>`;
+                    dotsHtml += `<span class="leave-dot" style="background-color: ${leave.color};" title="${leave.name} (${leave.leave_type}) - ${leave.status}"></span>`;
                 });
                 dotsHtml += '</div>';
 
@@ -259,10 +373,19 @@
         let html = '<ul class="list-group list-group-flush">';
 
         dailyLeaves.forEach(function(leave) {
+            let statusBadge = '';
+            if (leave.status === 'pending') {
+                statusBadge = '<span class="badge bg-warning text-dark ms-2"><i class="bi bi-hourglass-split"></i> Pending</span>';
+            } else if (leave.status === 'cancelled') {
+                statusBadge = '<span class="badge bg-danger ms-2"><i class="bi bi-x-circle"></i> Cancelled</span>';
+            } else {
+                statusBadge = '<span class="badge bg-success ms-2"><i class="bi bi-check-circle"></i> Approved</span>';
+            }
+            
             html += '<li class="list-group-item d-flex align-items-center py-3">';
             html += `<span class="rounded-circle me-3 flex-shrink-0" style="width: 14px; height: 14px; background-color: ${leave.color};"></span>`;
-            html += '<div>';
-            html += `<div class="fw-bold mb-1">${leave.name}</div>`;
+            html += '<div class="flex-grow-1">';
+            html += `<div class="fw-bold mb-1">${leave.name} ${statusBadge}</div>`;
             html += `<div class="small text-muted"><i class="bi bi-tag me-1"></i>${leave.leave_type}</div>`;
             html += '</div></li>';
         });

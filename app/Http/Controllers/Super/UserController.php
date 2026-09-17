@@ -12,12 +12,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use App\Notifications\NewUserRegistrationNotification;
 
 class UserController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Employee::with(['user', 'office', 'division']);
+        $query = Employee::with(['user.roles', 'office', 'division']);
 
         // Search Filter
         if ($request->has('search') && $request->search != '') {
@@ -80,6 +81,7 @@ class UserController extends Controller
                 'last_name' => $request->last_name,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
+                'is_first_login' => false, // Don't force password change on first login
             ]);
 
             Employee::create([
@@ -93,7 +95,21 @@ class UserController extends Controller
             ]);
 
             $roles = $request->roles ?? [];
+            // Ensure all users have the employee role
+            $employeeRole = Role::where('key', 'employee')->first();
+            if ($employeeRole && !in_array($employeeRole->id, $roles)) {
+                $roles[] = $employeeRole->id;
+            }
             $user->roles()->sync($roles);
+
+            // Notify all super admins about the new user creation (excluding the creator)
+            $superAdmins = User::whereHas('roles', function($query) {
+                $query->where('key', 'super_admin');
+            })->where('id', '!=', auth()->id())->get();
+
+            foreach ($superAdmins as $superAdmin) {
+                $superAdmin->notify(new NewUserRegistrationNotification($user));
+            }
         });
 
         return redirect()->route('super.users.index')->with('success', 'User created successfully.');
@@ -128,9 +144,11 @@ class UserController extends Controller
 
         DB::transaction(function () use ($request, $employee) {
             $userData = $request->only('first_name', 'middle_name', 'last_name', 'email');
+
             if ($request->filled('password')) {
                 $userData['password'] = Hash::make($request->password);
             }
+
             $employee->user->update($userData);
 
             $employee->update([
@@ -143,9 +161,104 @@ class UserController extends Controller
             ]);
 
             $roles = $request->roles ?? [];
+            // Ensure all users have the employee role
+            $employeeRole = Role::where('key', 'employee')->first();
+            if ($employeeRole && !in_array($employeeRole->id, $roles)) {
+                $roles[] = $employeeRole->id;
+            }
             $employee->user->roles()->sync($roles);
         });
 
-        return redirect()->route('super.users.index')->with('success', 'User updated successfully.');
+        return redirect()->route('super.users.index')->with('updated', 'User updated successfully.');
+    }
+
+    public function show($id)
+    {
+        try {
+            $employee = Employee::with(['user.roles', 'office', 'division'])->findOrFail($id);
+            return view('super.users.show', compact('employee'));
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return redirect()->route('super.users.index')->with('error', 'User not found. This user may have been deleted.');
+        }
+    }
+
+    public function destroy($id)
+    {
+        $employee = Employee::findOrFail($id);
+
+        // Prevent deletion of the current user
+        if (auth()->id() === $employee->user_id) {
+            return redirect()->route('super.users.index')->with('error', 'You cannot delete your own account.');
+        }
+
+        DB::transaction(function () use ($employee) {
+            // Delete user roles
+            $employee->user->roles()->detach();
+            // Delete employee record
+            $employee->delete();
+            // Delete user record
+            $employee->user->delete();
+        });
+
+        return redirect()->route('super.users.index')->with('success', 'User deleted successfully.');
+    }
+
+    public function resetPassword(Request $request, $id)
+    {
+        $employee = Employee::findOrFail($id);
+
+        // Prevent resetting own password
+        if (auth()->id() === $employee->user_id) {
+            return redirect()->route('super.users.index')->with('error', 'You cannot reset your own password.');
+        }
+
+        DB::transaction(function () use ($employee) {
+            $employee->user->update([
+                'password' => Hash::make('password'),
+                'is_first_login' => false, // Don't force password change on reset
+            ]);
+        });
+
+        if ($request->ajax()) {
+            return response()->json(['success' => true, 'message' => 'Password reset successfully.']);
+        }
+
+        return redirect()->route('super.users.index')->with('success', 'Password reset successfully.');
+    }
+
+    public function getModalData($id)
+    {
+        try {
+            $employee = Employee::with(['user.roles', 'office', 'division'])->findOrFail($id);
+
+            return response()->json([
+                'success' => true,
+                'user' => [
+                    'first_name' => $employee->user->first_name,
+                    'middle_name' => $employee->user->middle_name,
+                    'last_name' => $employee->user->last_name,
+                    'name' => $employee->user->name,
+                    'email' => $employee->user->email,
+                ],
+                'status' => $employee->status,
+                'office' => $employee->office->name ?? null,
+                'division' => $employee->division->name ?? null,
+                'position_title' => $employee->position_title,
+                'salary_grade' => $employee->salary_grade,
+                'sex' => $employee->sex,
+                'roles' => $employee->user->roles->map(function ($role) {
+                    return [
+                        'id' => $role->id,
+                        'name' => $role->name,
+                        'key' => $role->key,
+                    ];
+                })->toArray(),
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found. This user may have been deleted.'
+            ], 404);
+        }
     }
 }

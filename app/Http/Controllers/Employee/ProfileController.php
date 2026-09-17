@@ -31,12 +31,14 @@ class ProfileController extends Controller
     public function uploadSignature(Request $request)
     {
         $request->validate([
-            'signature' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+            'signature' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            'signature_data' => 'nullable|string',
         ]);
 
         // Explicitly pull a fresh user from the database
         $user = \App\Models\User::find(Auth::id());
 
+        // Handle file upload
         if ($request->hasFile('signature')) {
             // Delete old signature to save space
             if ($user->signature_path && Storage::disk('public')->exists($user->signature_path)) {
@@ -51,8 +53,34 @@ class ProfileController extends Controller
             // Save to database
             $user->signature_path = $path;
             $user->save();
+
+            return back()->with('status', 'E-Signature uploaded successfully!');
         }
 
-        return back()->with('status', 'E-Signature uploaded successfully!');
+        // Handle drawn signature (base64 data)
+        if ($request->filled('signature_data')) {
+            // Delete old signature to save space
+            if ($user->signature_path && Storage::disk('public')->exists($user->signature_path)) {
+                Storage::disk('public')->delete($user->signature_path);
+            }
+
+            // Process base64 data
+            $signatureData = $request->input('signature_data');
+            $imageData = substr($signatureData, strpos($signatureData, ',') + 1);
+            $imageData = base64_decode($imageData);
+
+            // Save as PNG file
+            $filename = $user->id . '_' . time() . '.png';
+            $path = 'signatures/' . $filename;
+            Storage::disk('public')->put($path, $imageData);
+
+            // Save to database
+            $user->signature_path = $path;
+            $user->save();
+
+            return back()->with('status', 'E-Signature saved successfully!');
+        }
+
+        return back()->withErrors(['error' => 'No signature data provided.']);
     }
 }

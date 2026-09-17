@@ -21,6 +21,7 @@
 
       <form method="POST" action="{{ route('employee.leaves.store') }}" enctype="multipart/form-data" id="leaveForm">
         @csrf
+        <input type="hidden" name="signature_data" id="signatureData">
 
         {{-- BASIC INFO --}}
         <div class="card shadow-sm mb-3">
@@ -141,6 +142,7 @@
             </div>
           </div>
         </div>
+
 
         {{-- DETAILS --}}
         <div class="card shadow-sm mb-3">
@@ -421,7 +423,7 @@
         {{-- ATTACHMENTS --}}
 
         <div class="d-flex gap-2">
-          <button type="submit" class="btn btn-primary">Submit Leave Application</button>
+          <button type="button" class="btn btn-primary" id="btnSubmit">Submit Leave Application</button>
           <button type="reset" class="btn btn-outline-secondary" id="btnReset">Reset</button>
         </div>
 
@@ -430,15 +432,404 @@
     </div>
   </div>
 </div>
+
+{{-- SIGNATURE MODAL --}}
+<div class="modal fade" id="signatureModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Applicant's Signature</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Signature Tabs -->
+        <ul class="nav nav-tabs mb-3" id="signatureTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="newSignatureTab" data-bs-toggle="tab" data-bs-target="#newSignature" type="button" role="tab">New Signature</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="previousSignatureTab" data-bs-toggle="tab" data-bs-target="#previousSignature" type="button" role="tab">Previous Signature</button>
+          </li>
+        </ul>
+
+        <!-- Tab Content -->
+        <div class="tab-content" id="signatureTabContent">
+          <!-- New Signature Tab -->
+          <div class="tab-pane fade show active" id="newSignature" role="tabpanel">
+            <div class="mb-3">
+              <canvas id="signatureCanvas" width="500" height="150" class="border rounded" style="width: 100%; height: 150px; background-color: #fff; cursor: crosshair;"></canvas>
+              @error('signature_data') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
+            </div>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="clearSignature">Clear Signature</button>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="uploadSignature">Upload Image Instead</button>
+              <input type="file" id="signatureUpload" accept="image/*" class="d-none">
+            </div>
+            <div class="form-text small mt-2">Sign above or upload an image of your signature to confirm your leave application.</div>
+            <div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" id="saveSignatureForFuture" checked>
+              <label class="form-check-label" for="saveSignatureForFuture">
+                Save this signature for future use
+              </label>
+            </div>
+          </div>
+
+          <!-- Previous Signature Tab -->
+          <div class="tab-pane fade" id="previousSignature" role="tabpanel">
+            <div id="noPreviousSignature" class="text-center py-4">
+              <i class="bi bi-signature fs-1 text-muted"></i>
+              <p class="text-muted mt-2">No saved signature found.</p>
+              <p class="small text-muted">Create and save a signature in the "New Signature" tab first.</p>
+            </div>
+            <div id="hasPreviousSignature" style="display: none;">
+              <div class="alert alert-info d-flex align-items-center gap-2">
+                <i class="bi bi-info-circle-fill"></i>
+                <div class="flex-grow-1">
+                  <strong>Saved signature found!</strong> You can use this signature or switch to the "New Signature" tab to create a different one.
+                </div>
+              </div>
+              <div class="mb-3 text-center">
+                <img id="previousSignaturePreview" src="" alt="Previous Signature" class="border rounded" style="max-height: 150px; max-width: 100%;">
+              </div>
+              <div class="d-flex gap-2 justify-content-center">
+                <button type="button" class="btn btn-sm btn-success" id="usePreviousSignature">
+                  <i class="bi bi-check-circle"></i> Use This Signature
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger" id="clearSavedSignature">
+                  <i class="bi bi-trash"></i> Clear Saved Signature
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="confirmSubmit">Confirm & Submit</button>
+      </div>
+    </div>
+  </div>
+</div>
 @endsection
 
 @push('scripts')
+{{-- Bootstrap CSS and JS for modal --}}
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
 {{-- Flatpickr CSS and JS --}}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 
 <script>
+// Signature storage functions (accessible globally)
+const STORAGE_KEY = 'saved_leave_signature';
+
+function loadSavedSignature() {
+    try {
+        return localStorage.getItem(STORAGE_KEY);
+    } catch (e) {
+        console.warn('Could not load signature from localStorage:', e);
+        return null;
+    }
+}
+
+function saveSignature(dataUrl) {
+    try {
+        localStorage.setItem(STORAGE_KEY, dataUrl);
+    } catch (e) {
+        console.warn('Could not save signature to localStorage:', e);
+    }
+}
+
+function clearSavedSignature() {
+    try {
+        localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {
+        console.warn('Could not clear signature from localStorage:', e);
+    }
+}
+
+// Signature Pad Functionality - Custom Implementation
+(function() {
+    const canvas = document.getElementById('signatureCanvas');
+    const signatureData = document.getElementById('signatureData');
+    const clearBtn = document.getElementById('clearSignature');
+    const uploadBtn = document.getElementById('uploadSignature');
+    const uploadInput = document.getElementById('signatureUpload');
+    const previousSignaturePreview = document.getElementById('previousSignaturePreview');
+    const usePreviousSignatureBtn = document.getElementById('usePreviousSignature');
+    const clearSavedSignatureBtn = document.getElementById('clearSavedSignature');
+    const saveSignatureForFuture = document.getElementById('saveSignatureForFuture');
+    const noPreviousSignature = document.getElementById('noPreviousSignature');
+    const hasPreviousSignature = document.getElementById('hasPreviousSignature');
+    const previousSignatureTab = document.getElementById('previousSignatureTab');
+    const newSignatureTab = document.getElementById('newSignatureTab');
+
+    let isDrawing = false;
+    let lastX = 0;
+    let lastY = 0;
+    let ctx = null;
+
+    function initCanvas() {
+        if (!canvas) return;
+        ctx = canvas.getContext('2d');
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+    }
+
+    function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
+        };
+    }
+
+    function startDrawing(e) {
+        e.preventDefault();
+        isDrawing = true;
+        const pos = getPos(e);
+        lastX = pos.x;
+        lastY = pos.y;
+    }
+
+    function draw(e) {
+        if (!isDrawing) return;
+        e.preventDefault();
+        const pos = getPos(e);
+        
+        ctx.beginPath();
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        
+        lastX = pos.x;
+        lastY = pos.y;
+    }
+
+    function stopDrawing(e) {
+        if (isDrawing) {
+            isDrawing = false;
+            signatureData.value = canvas.toDataURL();
+        }
+    }
+
+    // Check for and display previous signature
+    function checkPreviousSignature() {
+        const savedSignature = loadSavedSignature();
+        if (savedSignature) {
+            previousSignaturePreview.src = savedSignature;
+            if (noPreviousSignature) noPreviousSignature.style.display = 'none';
+            if (hasPreviousSignature) hasPreviousSignature.style.display = 'block';
+        } else {
+            if (noPreviousSignature) noPreviousSignature.style.display = 'block';
+            if (hasPreviousSignature) hasPreviousSignature.style.display = 'none';
+        }
+    }
+
+    // Initialize when modal is shown
+    const modal = document.getElementById('signatureModal');
+    if (modal) {
+        modal.addEventListener('shown.bs.modal', function() {
+            setTimeout(function() {
+                initCanvas();
+                checkPreviousSignature();
+                
+                // Switch to previous signature tab if there's a saved signature
+                const savedSignature = loadSavedSignature();
+                if (savedSignature) {
+                    const tab = new bootstrap.Tab(previousSignatureTab);
+                    tab.show();
+                }
+            }, 100);
+        });
+        
+        modal.addEventListener('hidden.bs.modal', function() {
+            signatureData.value = '';
+            uploadInput.value = '';
+            
+            // Reset to new signature tab when modal closes
+            if (newSignatureTab) {
+                const tab = new bootstrap.Tab(newSignatureTab);
+                tab.show();
+            }
+        });
+    }
+
+    // Mouse events
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing);
+
+    // Touch events
+    canvas.addEventListener('touchstart', startDrawing);
+    canvas.addEventListener('touchmove', draw);
+    canvas.addEventListener('touchend', stopDrawing);
+
+    // Clear signature
+    clearBtn.addEventListener('click', function() {
+        if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            signatureData.value = '';
+        }
+    });
+
+    // Upload signature
+    uploadBtn.addEventListener('click', function() {
+        uploadInput.click();
+    });
+
+    uploadInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    if (ctx) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        
+                        const rect = canvas.getBoundingClientRect();
+                        const scale = Math.min(rect.width / img.width, rect.height / img.height);
+                        const x = (rect.width - img.width * scale) / 2;
+                        const y = (rect.height - img.height * scale) / 2;
+                        
+                        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+                        signatureData.value = canvas.toDataURL();
+                    }
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+
+    // Use previous signature
+    usePreviousSignatureBtn.addEventListener('click', function() {
+        const savedSignature = loadSavedSignature();
+        if (savedSignature && ctx) {
+            const img = new Image();
+            img.onload = function() {
+                // Switch to new signature tab
+                if (newSignatureTab) {
+                    const tab = new bootstrap.Tab(newSignatureTab);
+                    tab.show();
+                }
+                
+                // Wait for tab switch then draw on canvas
+                setTimeout(function() {
+                    initCanvas();
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    const rect = canvas.getBoundingClientRect();
+                    const scale = Math.min(rect.width / img.width, rect.height / img.height);
+                    const x = (rect.width - img.width * scale) / 2;
+                    const y = (rect.height - img.height * scale) / 2;
+                    
+                    ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+                    signatureData.value = canvas.toDataURL();
+                }, 100);
+            };
+            img.src = savedSignature;
+        }
+    });
+
+    // Clear saved signature
+    clearSavedSignatureBtn.addEventListener('click', function() {
+        if (confirm('Are you sure you want to clear your saved signature?')) {
+            clearSavedSignature();
+            checkPreviousSignature();
+        }
+    });
+
+    // Handle tab switching to reinitialize canvas when switching to new signature tab
+    if (newSignatureTab) {
+        newSignatureTab.addEventListener('shown.bs.tab', function() {
+            setTimeout(function() {
+                initCanvas();
+            }, 50);
+        });
+    }
+})();
+
+// Modal and submit handling
+const signatureModal = new bootstrap.Modal(document.getElementById('signatureModal'));
+const btnSubmit = document.getElementById('btnSubmit');
+const confirmSubmit = document.getElementById('confirmSubmit');
+
+// Show signature modal when submit button is clicked
+btnSubmit.addEventListener('click', function(e) {
+    e.preventDefault();
+    
+    // Validate form fields first
+    const form = document.getElementById('leaveForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+    
+    // Clear previous signature and show modal
+    const canvas = document.getElementById('signatureCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    document.getElementById('signatureData').value = '';
+    
+    signatureModal.show();
+});
+
+// Confirm submit with signature
+confirmSubmit.addEventListener('click', function() {
+    const signatureData = document.getElementById('signatureData').value;
+    const saveSignatureForFuture = document.getElementById('saveSignatureForFuture');
+    
+    // Check if canvas is empty and try to use saved signature
+    if (!signatureData) {
+        const savedSignature = loadSavedSignature();
+        if (savedSignature) {
+            // Automatically use the saved signature
+            document.getElementById('signatureData').value = savedSignature;
+            
+            // Save signature to localStorage if checkbox is checked
+            if (saveSignatureForFuture.checked) {
+                try {
+                    localStorage.setItem('saved_leave_signature', savedSignature);
+                } catch (e) {
+                    console.warn('Could not save signature to localStorage:', e);
+                }
+            }
+            
+            signatureModal.hide();
+            document.getElementById('leaveForm').submit();
+            return;
+        } else {
+            alert('Please sign or upload your signature before submitting.');
+            return;
+        }
+    }
+    
+    // Save signature to localStorage if checkbox is checked
+    if (saveSignatureForFuture.checked) {
+        try {
+            localStorage.setItem('saved_leave_signature', signatureData);
+        } catch (e) {
+            console.warn('Could not save signature to localStorage:', e);
+        }
+    }
+    
+    signatureModal.hide();
+    document.getElementById('leaveForm').submit();
+});
+
 (function() {
   const $leaveType = $('#leave_type_id');
   const $days = $('#working_days_requested');

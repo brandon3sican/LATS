@@ -53,7 +53,7 @@
             @if($user->signature_path)
                 <div class="mb-2">
                     <span class="text-sm text-gray-600">Current Signature:</span>
-                    <img src="{{ asset('storage/' . $user->signature_path) }}" alt="Signature" class="h-16 mt-1 border rounded p-1">
+                    <img src="{{ route('signatures.show', ['path' => $user->signature_path]) }}" alt="Signature" class="h-16 mt-1 border rounded p-1">
                 </div>
             @endif
 

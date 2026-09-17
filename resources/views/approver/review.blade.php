@@ -236,6 +236,7 @@
             @php
                 $isPersonnel = auth()->user()->hasRole('approver_personnel');
                 $showCredits = $isPersonnel || auth()->user()->hasRole('approver_chief_personnel') || auth()->user()->hasRole('approver_ard_ms');
+                $requiresOtp = auth()->user()->hasAnyRole(['approver_chief_personnel', 'approver_ard_ms']);
             @endphp
 
             {{-- OPEN MASTER FORM FOR ACTIONS --}}
@@ -391,15 +392,363 @@
                         @endif
 
                         <div class="d-flex gap-2">
-                            <button type="submit" name="action" value="approved" class="btn btn-success px-4 fw-bold">
+                            <button type="button" class="btn btn-success px-4 fw-bold" id="approveBtn" data-bs-toggle="modal" data-bs-target="#approveModal">
                                 <i class="bi bi-check-circle me-1"></i> Approve
                             </button>
-                            <button type="submit" name="action" value="returned" class="btn btn-warning px-4 fw-bold">
+                            <button type="button" class="btn btn-warning px-4 fw-bold" id="returnBtn" data-bs-toggle="modal" data-bs-target="#returnModal">
                                 <i class="bi bi-arrow-return-left me-1"></i> Return
                             </button>
-                            <button type="submit" name="action" value="disapproved" class="btn btn-danger px-4 fw-bold">
+                            <button type="button" class="btn btn-danger px-4 fw-bold" id="disapproveBtn" data-bs-toggle="modal" data-bs-target="#disapproveModal">
                                 <i class="bi bi-x-circle me-1"></i> Disapprove
                             </button>
+                        </div>
+                    </div>
+                </div>
+                
+                {{-- APPROVE MODAL --}}
+                <div class="modal fade" id="approveModal" tabindex="-1" aria-labelledby="approveModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content">
+                            <div class="modal-header bg-success text-white">
+                                <h5 class="modal-title" id="approveModalLabel">
+                                    <i class="bi bi-check-circle me-2"></i> Confirm Approval
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                {{-- Step 1: Initial Confirmation --}}
+                                <div id="approvalStep1">
+                                <div class="alert alert-success border-0 bg-success bg-opacity-10">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    <strong>You are about to APPROVE</strong> this leave application.
+                                </div>
+                                
+                                <p class="mb-3">By approving this application, you confirm that:</p>
+                                <ul class="mb-3">
+                                    <li>The leave request complies with office policies</li>
+                                    <li>The employee has sufficient leave credits</li>
+                                    <li>All required documentation has been reviewed</li>
+                                    <li>The dates and leave type are appropriate</li>
+                                </ul>
+                                
+                                <div class="alert alert-warning small">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>
+                                    <strong>Important:</strong> This action will be recorded in the approval timeline and cannot be undone.
+                                </div>
+                                
+                                <button type="button" class="btn btn-primary w-100 mb-3" id="proceedToSignature">
+                                    <i class="bi bi-arrow-right me-1"></i> Proceed to Signature
+                                </button>
+                                </div>
+                                
+                                <div id="signatureSection" class="d-none">
+                                    <div class="alert alert-info border-0 bg-info bg-opacity-10">
+                                        <i class="bi bi-pencil-square me-2"></i>
+                                        <strong>Step 2:</strong> Provide your signature to confirm approval
+                                    </div>
+                                    
+                                    {{-- Signature Options --}}
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">Signature Method</label>
+                                        <div class="btn-group w-100" role="group">
+                                            <input type="radio" class="btn-check" name="signatureMethod" id="useExisting" value="existing" autocomplete="off" checked>
+                                            <label class="btn btn-outline-primary" for="useExisting">
+                                                <i class="bi bi-file-earmark-check me-1"></i> Use Saved Signature
+                                            </label>
+                                            
+                                            <input type="radio" class="btn-check" name="signatureMethod" id="drawNew" value="draw" autocomplete="off">
+                                            <label class="btn btn-outline-primary" for="drawNew">
+                                                <i class="bi bi-pencil me-1"></i> Draw New
+                                            </label>
+                                            
+                                            <input type="radio" class="btn-check" name="signatureMethod" id="uploadNew" value="upload" autocomplete="off">
+                                            <label class="btn btn-outline-primary" for="uploadNew">
+                                                <i class="bi bi-upload me-1"></i> Upload New
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                {{-- Existing Signature Display --}}
+                                <div id="existingSignatureSection" class="mb-3">
+                                    @if(auth()->user()->signature_path)
+                                        <div class="card border-primary">
+                                            <div class="card-body text-center">
+                                                <img src="{{ route('signatures.show', ['path' => auth()->user()->signature_path]) }}" alt="Your saved signature" class="img-fluid" style="max-height: 100px;">
+                                                <p class="text-muted small mt-2 mb-0">Your saved signature</p>
+                                            </div>
+                                        </div>
+                                    @else
+                                        <div class="alert alert-info">
+                                            <i class="bi bi-info-circle me-2"></i>
+                                            No saved signature found. Please draw or upload a new signature.
+                                        </div>
+                                    @endif
+                                </div>
+
+                                {{-- Draw Signature Section --}}
+                                <div id="drawSignatureSection" class="mb-3 d-none">
+                                    <p class="text-muted mb-2">Draw your signature below:</p>
+                                    <div class="card border" style="background: white;">
+                                        <canvas id="signaturePad" width="600" height="200" style="width: 100%; height: 200px; touch-action: none; cursor: crosshair;"></canvas>
+                                    </div>
+                                    <div class="mt-2 d-flex gap-2">
+                                        <button type="button" id="clearSignature" class="btn btn-sm btn-outline-secondary">
+                                            <i class="bi bi-eraser me-1"></i> Clear Signature
+                                        </button>
+                                        <small class="text-muted align-self-center ms-auto">This signature will be saved for future use</small>
+                                    </div>
+                                </div>
+
+                                {{-- Upload Signature Section --}}
+                                <div id="uploadSignatureSection" class="mb-3 d-none">
+                                    <p class="text-muted mb-2">Upload your signature image:</p>
+                                    <div class="mb-2">
+                                        <input type="file" id="signatureUpload" class="form-control" accept="image/*">
+                                        <small class="text-muted">Supported formats: PNG, JPG, JPEG (Max 2MB)</small>
+                                    </div>
+                                    <div id="uploadPreview" class="card border d-none">
+                                        <div class="card-body text-center">
+                                            <img id="uploadedSignature" src="" alt="Uploaded signature" class="img-fluid" style="max-height: 100px;">
+                                        </div>
+                                    </div>
+                                    <small class="text-muted">This signature will be saved for future use</small>
+                                </div>
+                                
+                                <input type="hidden" name="signature" id="signatureData">
+                                
+                                <div class="d-flex gap-2 mt-3">
+                                    <button type="button" class="btn btn-outline-secondary" id="backToStep1">
+                                        <i class="bi bi-arrow-left me-1"></i> Back
+                                    </button>
+                                    <button type="button" class="btn btn-primary flex-grow-1" id="proceedToFinal">
+                                        <i class="bi bi-arrow-right me-1"></i> Review & Confirm
+                                    </button>
+                                </div>
+                                </div>
+                                
+                                {{-- Step 3: OTP Verification (for Chief Personnel and ARD only) --}}
+                                @if($requiresOtp)
+                                <div id="otpSection" class="d-none">
+                                    <div class="alert alert-info border-0 bg-info bg-opacity-10">
+                                        <i class="bi bi-shield-lock me-2"></i>
+                                        <strong>Step 3:</strong> Two-Factor Authentication Required
+                                    </div>
+
+                                    <p class="mb-3">For enhanced security, please verify your approval using two-factor authentication.</p>
+
+                                    {{-- 2FA Method Selection --}}
+                                    <div class="card mb-3">
+                                        <div class="card-body">
+                                            <label class="form-label fw-semibold">Choose Verification Method</label>
+                                            <div class="btn-group w-100" role="group">
+                                                <input type="radio" class="btn-check" name="2faMethod" id="methodEmail" value="email" autocomplete="off" checked onclick="var emailSection=document.getElementById('emailOtpSection'); var googleSection=document.getElementById('google2faSection'); if(emailSection) emailSection.classList.remove('d-none'); if(googleSection) googleSection.classList.add('d-none');">
+                                                <label class="btn btn-outline-primary" for="methodEmail">
+                                                    <i class="bi bi-envelope me-1"></i> Email OTP
+                                                </label>
+
+                                                <input type="radio" class="btn-check" name="2faMethod" id="methodGoogle" value="google2fa" autocomplete="off" onclick="var emailSection=document.getElementById('emailOtpSection'); var googleSection=document.getElementById('google2faSection'); if(emailSection) emailSection.classList.add('d-none'); if(googleSection) googleSection.classList.remove('d-none');">
+                                                <label class="btn btn-outline-primary" for="methodGoogle">
+                                                    <i class="bi bi-phone me-1"></i> Google Authenticator
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {{-- Email OTP Section --}}
+                                    <div id="emailOtpSection" class="card mb-3 d-none">
+                                        <div class="card-body">
+                                            <div class="mb-3">
+                                                <label class="form-label fw-semibold">Email Address</label>
+                                                <div class="form-control bg-light">{{ auth()->user()->email }}</div>
+                                                <small class="text-muted">OTP will be sent to this email address</small>
+                                            </div>
+
+                                            <div id="otpSendSection">
+                                                <button type="button" class="btn btn-primary w-100" id="sendOtpBtn">
+                                                    <i class="bi bi-envelope me-1"></i> Send OTP Code
+                                                </button>
+                                                <div class="alert alert-warning mt-3 mb-0">
+                                                    <i class="bi bi-exclamation-triangle me-2"></i>
+                                                    <strong>Important:</strong> Check your spam/junk folder if you don't receive the OTP within a minute.
+                                                </div>
+                                            </div>
+
+                                            <div id="otpInputSection" class="d-none">
+                                                <label class="form-label fw-semibold">Enter OTP Code</label>
+                                                <input type="text" id="otpCode" class="form-control text-center fs-4 fw-bold" maxlength="6" placeholder="000000" style="letter-spacing: 8px;">
+                                                <small class="text-muted d-block mt-2">Enter the 6-digit code sent to your email</small>
+
+                                                <div class="mt-3">
+                                                    <button type="button" class="btn btn-link btn-sm text-decoration-none" id="resendOtpBtn" disabled>
+                                                        <i class="bi bi-arrow-clockwise me-1"></i> Resend OTP <span id="resendCountdown">(30s)</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {{-- Google Authenticator Section --}}
+                                    <div id="google2faSection" class="card mb-3 d-none">
+                                        <div class="card-body">
+                                            <div class="alert alert-success border-0 bg-success bg-opacity-10">
+                                                <i class="bi bi-phone me-2"></i>
+                                                <strong>Google Authenticator Enabled</strong>
+                                            </div>
+
+                                            <div class="mb-3">
+                                                <label class="form-label fw-semibold">Enter Google Authenticator Code</label>
+                                                <input type="text" id="google2faCode" class="form-control text-center fs-4 fw-bold" maxlength="8" placeholder="000000" style="letter-spacing: 8px;">
+                                                <small class="text-muted d-block mt-2">Enter the 6 or 8-digit code from your Google Authenticator app</small>
+                                            </div>
+
+                                            <div class="alert alert-info small">
+                                                <i class="bi bi-info-circle me-1"></i>
+                                                The code changes every 30 seconds. Make sure to enter the current code.
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="alert alert-warning small">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>
+                                        <strong>Important:</strong> The verification code will expire and can only be used once.
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+                                        <button type="button" class="btn btn-outline-secondary" id="backToSignatureFromOtp">
+                                            <i class="bi bi-arrow-left me-1"></i> Back
+                                        </button>
+                                        <button type="button" class="btn btn-primary flex-grow-1" id="verifyOtpBtn" disabled>
+                                            <i class="bi bi-shield-check me-1"></i> Verify & Continue
+                                        </button>
+                                    </div>
+                                </div>
+                                @endif
+
+                                {{-- Step 4: Final Confirmation --}}
+                                <div id="finalConfirmSection" class="d-none">
+                                    <div class="alert alert-danger border-0 bg-danger bg-opacity-10">
+                                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                        <strong>FINAL CONFIRMATION REQUIRED</strong>
+                                    </div>
+
+                                    <p class="mb-3">Please review the following before final approval:</p>
+
+                                    <div class="card mb-3">
+                                        <div class="card-body">
+                                            <h6 class="fw-bold mb-2">Approval Effects:</h6>
+                                            <ul class="mb-0 small">
+                                                <li>This application will move to the next approval step</li>
+                                                <li>Your digital signature will be permanently recorded</li>
+                                                <li>The employee will be notified of your approval</li>
+                                                <li>This action will be logged in the system audit trail</li>
+                                                <li>If this is the final approval step, the leave will be officially approved</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+
+                                    <div class="alert alert-warning small">
+                                        <i class="bi bi-shield-exclamation me-1"></i>
+                                        <strong>Warning:</strong> Once confirmed, this action cannot be undone. Make sure you have thoroughly reviewed the application.
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+                                        <button type="button" class="btn btn-outline-secondary" id="backToSignature">
+                                            <i class="bi bi-arrow-left me-1"></i> Back
+                                        </button>
+                                        <button type="button" class="btn btn-success flex-grow-1 fw-bold" id="finalConfirmBtn">
+                                            <i class="bi bi-check-circle me-1"></i> I Understand - Confirm Approval
+                                        </button>
+                                    </div>
+                                </div>
+                                @error('signature')
+                                    <div class="text-danger small mt-2">{{ $message }}</div>
+                                @enderror
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                    <i class="bi bi-x-circle me-1"></i> Cancel
+                                </button>
+                                <button type="button" class="btn btn-success px-4 fw-bold d-none" id="confirmApproveBtn">
+                                    <i class="bi bi-check-circle me-1"></i> Confirm & Approve
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- RETURN MODAL --}}
+                <div class="modal fade" id="returnModal" tabindex="-1" aria-labelledby="returnModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content">
+                            <div class="modal-header bg-warning text-dark">
+                                <h5 class="modal-title" id="returnModalLabel">
+                                    <i class="bi bi-arrow-return-left me-2"></i> Confirm Return
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="alert alert-warning border-0 bg-warning bg-opacity-10">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    <strong>You are about to RETURN</strong> this leave application.
+                                </div>
+                                
+                                <p class="mb-3">By returning this application, you are sending it back to the employee for corrections or additional information.</p>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Reason for Return <span class="text-danger">*</span></label>
+                                    <textarea id="returnReason" class="form-control" rows="3" placeholder="Please explain why you are returning this application..."></textarea>
+                                    <small class="text-muted">This reason will be visible to the employee.</small>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                    <i class="bi bi-x-circle me-1"></i> Cancel
+                                </button>
+                                <button type="button" class="btn btn-warning px-4 fw-bold" id="confirmReturnBtn">
+                                    <i class="bi bi-arrow-return-left me-1"></i> Confirm & Return
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- DISAPPROVE MODAL --}}
+                <div class="modal fade" id="disapproveModal" tabindex="-1" aria-labelledby="disapproveModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content">
+                            <div class="modal-header bg-danger text-white">
+                                <h5 class="modal-title" id="disapproveModalLabel">
+                                    <i class="bi bi-x-circle me-2"></i> Confirm Disapproval
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="alert alert-danger border-0 bg-danger bg-opacity-10">
+                                    <i class="bi bi-exclamation-triangle me-2"></i>
+                                    <strong>You are about to DISAPPROVE</strong> this leave application.
+                                </div>
+                                
+                                <p class="mb-3">By disapproving this application, you are rejecting the leave request entirely. This action cannot be undone.</p>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Reason for Disapproval <span class="text-danger">*</span></label>
+                                    <textarea id="disapproveReason" class="form-control" rows="3" placeholder="Please explain why you are disapproving this application..."></textarea>
+                                    <small class="text-muted">This reason will be visible to the employee.</small>
+                                </div>
+                                
+                                <div class="alert alert-warning small">
+                                    <i class="bi bi-exclamation-circle me-1"></i>
+                                    <strong>Warning:</strong> This will permanently reject the leave application.
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                    <i class="bi bi-x-circle me-1"></i> Cancel
+                                </button>
+                                <button type="button" class="btn btn-danger px-4 fw-bold" id="confirmDisapproveBtn">
+                                    <i class="bi bi-x-circle me-1"></i> Confirm & Disapprove
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -548,7 +897,7 @@
 </div>
 
 @push('scripts')
-{{-- Flatpickr CSS & JS --}}
+{{-- Flatpickr CSS and JS --}}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <style>
@@ -557,6 +906,13 @@
       box-shadow: none !important;
       border: 1px solid #dee2e6;
       margin-top: 0.25rem;
+  }
+  /* Signature pad styling */
+  #signaturePad {
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      background-color: #fff;
+      cursor: crosshair;
   }
 </style>
 <script>
@@ -573,6 +929,716 @@
                 instance.setDate(originalDates);
             }
         });
+    @endif
+
+    // Modal Functionality
+    @if($canAction)
+        // APPROVE MODAL with Signature Options (Required for all users)
+        // Custom canvas drawing implementation
+        let signatureCtx = null;
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        const approveModal = document.getElementById('approveModal');
+        let currentSignatureMethod = 'existing';
+        
+        function initSignatureCanvas() {
+            const canvas = document.getElementById('signaturePad');
+            if (!canvas) return;
+            signatureCtx = canvas.getContext('2d');
+            // Use the explicit width/height attributes from HTML
+            signatureCtx.strokeStyle = '#000';
+            signatureCtx.lineWidth = 2;
+            signatureCtx.lineCap = 'round';
+            signatureCtx.lineJoin = 'round';
+        }
+        
+        function getSignaturePos(e) {
+            const canvas = document.getElementById('signaturePad');
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+        
+        function startSignatureDrawing(e) {
+            e.preventDefault();
+            isDrawing = true;
+            const pos = getSignaturePos(e);
+            lastX = pos.x;
+            lastY = pos.y;
+        }
+        
+        function drawSignature(e) {
+            if (!isDrawing) return;
+            e.preventDefault();
+            const pos = getSignaturePos(e);
+            
+            signatureCtx.beginPath();
+            signatureCtx.moveTo(lastX, lastY);
+            signatureCtx.lineTo(pos.x, pos.y);
+            signatureCtx.stroke();
+            
+            lastX = pos.x;
+            lastY = pos.y;
+        }
+        
+        function stopSignatureDrawing(e) {
+            if (isDrawing) {
+                isDrawing = false;
+                const canvas = document.getElementById('signaturePad');
+                document.getElementById('signatureData').value = canvas.toDataURL();
+            }
+        }
+        
+        // Signature method switching
+        const signatureMethodRadios = document.querySelectorAll('input[name="signatureMethod"]');
+        const existingSection = document.getElementById('existingSignatureSection');
+        const drawSection = document.getElementById('drawSignatureSection');
+        const uploadSection = document.getElementById('uploadSignatureSection');
+        
+        signatureMethodRadios.forEach(radio => {
+            radio.addEventListener('change', function() {
+                currentSignatureMethod = this.value;
+                
+                // Hide all sections first
+                existingSection.classList.add('d-none');
+                drawSection.classList.add('d-none');
+                uploadSection.classList.add('d-none');
+                
+                // Show selected section
+                if (currentSignatureMethod === 'existing') {
+                    existingSection.classList.remove('d-none');
+                } else if (currentSignatureMethod === 'draw') {
+                    drawSection.classList.remove('d-none');
+                    // Initialize canvas when draw section is shown
+                    setTimeout(initSignatureCanvas, 100);
+                } else if (currentSignatureMethod === 'upload') {
+                    uploadSection.classList.remove('d-none');
+                }
+            });
+        });
+        
+        // Initialize signature canvas when approve modal is shown
+        if (approveModal) {
+            approveModal.addEventListener('shown.bs.modal', function() {
+                // Reset modal to step 1
+                document.getElementById('approvalStep1').classList.remove('d-none');
+                document.getElementById('signatureSection').classList.add('d-none');
+                document.getElementById('finalConfirmSection').classList.add('d-none');
+
+                // Reset OTP section if exists
+                const otpSection = document.getElementById('otpSection');
+                if (otpSection) {
+                    otpSection.classList.add('d-none');
+                    const otpSendSection = document.getElementById('otpSendSection');
+                    const otpInputSection = document.getElementById('otpInputSection');
+                    if (otpSendSection) otpSendSection.classList.remove('d-none');
+                    if (otpInputSection) otpInputSection.classList.add('d-none');
+                    const otpCode = document.getElementById('otpCode');
+                    if (otpCode) otpCode.value = '';
+                    const verifyOtpBtn = document.getElementById('verifyOtpBtn');
+                    if (verifyOtpBtn) verifyOtpBtn.disabled = true;
+                    if (typeof resendTimer !== 'undefined' && resendTimer) {
+                        clearInterval(resendTimer);
+                        resendTimer = null;
+                    }
+                }
+
+                // Reset to existing signature by default
+                document.getElementById('useExisting').checked = true;
+                currentSignatureMethod = 'existing';
+
+                // Show existing section
+                existingSection.classList.remove('d-none');
+                drawSection.classList.add('d-none');
+                uploadSection.classList.add('d-none');
+
+                // Initialize signature canvas
+                initSignatureCanvas();
+
+                // Check if user has existing signature
+                const hasExistingSignature = {{ auth()->user()->signature_path ? 'true' : 'false' }};
+                if (!hasExistingSignature) {
+                    // If no existing signature, switch to draw by default
+                    document.getElementById('drawNew').checked = true;
+                    document.getElementById('drawNew').dispatchEvent(new Event('change'));
+                }
+            });
+
+            // Clear signature when modal is hidden
+            approveModal.addEventListener('hidden.bs.modal', function() {
+                document.getElementById('signatureData').value = '';
+                document.getElementById('signatureUpload').value = '';
+                document.getElementById('uploadPreview').classList.add('d-none');
+
+                // Reset modal to step 1
+                document.getElementById('approvalStep1').classList.remove('d-none');
+                document.getElementById('signatureSection').classList.add('d-none');
+                document.getElementById('finalConfirmSection').classList.add('d-none');
+
+                // Reset OTP section if exists
+                const otpSection = document.getElementById('otpSection');
+                if (otpSection) {
+                    otpSection.classList.add('d-none');
+                    const otpCode = document.getElementById('otpCode');
+                    if (otpCode) otpCode.value = '';
+                    if (resendTimer) {
+                        clearInterval(resendTimer);
+                        resendTimer = null;
+                    }
+                }
+            });
+        }
+
+        // Clear signature button
+        document.getElementById('clearSignature')?.addEventListener('click', function() {
+            const canvas = document.getElementById('signaturePad');
+            if (canvas && signatureCtx) {
+                signatureCtx.clearRect(0, 0, canvas.width, canvas.height);
+                document.getElementById('signatureData').value = '';
+            }
+        });
+        
+        // Attach drawing events to signature canvas
+        const signatureCanvas = document.getElementById('signaturePad');
+        if (signatureCanvas) {
+            signatureCanvas.addEventListener('mousedown', startSignatureDrawing);
+            signatureCanvas.addEventListener('mousemove', drawSignature);
+            signatureCanvas.addEventListener('mouseup', stopSignatureDrawing);
+            signatureCanvas.addEventListener('mouseout', stopSignatureDrawing);
+            signatureCanvas.addEventListener('touchstart', startSignatureDrawing);
+            signatureCanvas.addEventListener('touchmove', drawSignature);
+            signatureCanvas.addEventListener('touchend', stopSignatureDrawing);
+        }
+
+        // Handle signature upload preview
+        document.getElementById('signatureUpload')?.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                // Validate file size (2MB max)
+                if (file.size > 2 * 1024 * 1024) {
+                    alert('File size must be less than 2MB');
+                    this.value = '';
+                    return;
+                }
+                
+                // Validate file type
+                if (!file.type.match('image.*')) {
+                    alert('Please select an image file');
+                    this.value = '';
+                    return;
+                }
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('uploadedSignature').src = e.target.result;
+                    document.getElementById('uploadPreview').classList.remove('d-none');
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Handle approve button click
+        document.getElementById('proceedToSignature')?.addEventListener('click', function() {
+            // Hide step 1, show signature section
+            document.getElementById('approvalStep1').classList.add('d-none');
+            document.getElementById('signatureSection').classList.remove('d-none');
+        });
+
+        // Handle back to step 1
+        document.getElementById('backToStep1')?.addEventListener('click', function() {
+            // Show step 1, hide signature section
+            document.getElementById('approvalStep1').classList.remove('d-none');
+            document.getElementById('signatureSection').classList.add('d-none');
+        });
+
+        // Handle proceed to final confirmation (or OTP for Chief Personnel/ARD)
+        document.getElementById('proceedToFinal')?.addEventListener('click', function() {
+            let signatureData = null;
+
+            if (currentSignatureMethod === 'existing') {
+                // Check if user has existing signature
+                const hasExistingSignature = {{ auth()->user()->signature_path ? 'true' : 'false' }};
+                if (!hasExistingSignature) {
+                    alert('No saved signature found. Please draw or upload a signature.');
+                    return false;
+                }
+                // Use existing signature path (controller will handle it)
+                signatureData = 'existing';
+            } else if (currentSignatureMethod === 'draw') {
+                const canvas = document.getElementById('signaturePad');
+                const signatureDataValue = document.getElementById('signatureData').value;
+                if (!signatureDataValue) {
+                    alert('Please draw your signature before proceeding.');
+                    return false;
+                }
+                signatureData = signatureDataValue;
+            } else if (currentSignatureMethod === 'upload') {
+                const uploadInput = document.getElementById('signatureUpload');
+                if (!uploadInput.files || uploadInput.files.length === 0) {
+                    alert('Please upload your signature before proceeding.');
+                    return false;
+                }
+                // Get the base64 data from the preview
+                const uploadedSignature = document.getElementById('uploadedSignature');
+                if (uploadedSignature.src) {
+                    signatureData = uploadedSignature.src;
+                } else {
+                    alert('Please upload a valid signature image.');
+                    return false;
+                }
+            }
+
+            // Set signature data
+            document.getElementById('signatureData').value = signatureData;
+
+            // Check if user requires OTP verification
+            const requiresOtp = {{ $requiresOtp ? 'true' : 'false' }};
+
+            if (requiresOtp) {
+                // Show OTP section instead of final confirmation
+                document.getElementById('signatureSection').classList.add('d-none');
+                document.getElementById('otpSection').classList.remove('d-none');
+            } else {
+                // Show final confirmation directly
+                document.getElementById('signatureSection').classList.add('d-none');
+                document.getElementById('finalConfirmSection').classList.remove('d-none');
+            }
+        });
+
+        // Handle back to signature
+        document.getElementById('backToSignature')?.addEventListener('click', function() {
+            // Show signature section, hide final confirmation
+            document.getElementById('signatureSection').classList.remove('d-none');
+            document.getElementById('finalConfirmSection').classList.add('d-none');
+        });
+
+        // OTP Functionality (for Chief Personnel and ARD)
+        const requiresOtp = {{ $requiresOtp ? 'true' : 'false' }};
+        const leaveId = {{ $leave->id }};
+        const hasGoogle2faEnabled = {{ auth()->user()->hasGoogle2faEnabled() ? 'true' : 'false' }};
+        let resendCountdown = 30;
+        let resendTimer = null;
+        let current2faMethod = 'email'; // default to email
+
+        console.log('OTP Debug:', { requiresOtp, leaveId, hasGoogle2faEnabled });
+
+        // Countdown timer for resend button
+        window.startResendCountdown = function() {
+            resendCountdown = 30;
+            const resendBtn = document.getElementById('resendOtpBtn');
+            if (resendBtn) {
+                resendBtn.disabled = true;
+                resendBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP (' + resendCountdown + 's)';
+            }
+
+            if (resendTimer) {
+                clearInterval(resendTimer);
+            }
+
+            resendTimer = setInterval(function() {
+                resendCountdown--;
+                if (resendCountdown <= 0) {
+                    clearInterval(resendTimer);
+                    resendTimer = null;
+                    if (resendBtn) {
+                        resendBtn.disabled = false;
+                        resendBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP';
+                    }
+                } else {
+                    if (resendBtn) {
+                        resendBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP (' + resendCountdown + 's)';
+                    }
+                }
+            }, 1000);
+        };
+
+        if (requiresOtp) {
+            // Method selection event listeners
+            var methodEmail = document.getElementById('methodEmail');
+            var methodGoogle = document.getElementById('methodGoogle');
+            var emailOtpSection = document.getElementById('emailOtpSection');
+            var google2faSection = document.getElementById('google2faSection');
+
+            console.log('Method elements:', { methodEmail, methodGoogle, emailOtpSection, google2faSection });
+
+            if (methodEmail) {
+                methodEmail.addEventListener('change', function() {
+                    console.log('Email method selected');
+                    if (emailOtpSection) emailOtpSection.classList.remove('d-none');
+                    if (google2faSection) google2faSection.classList.add('d-none');
+                });
+            }
+
+            if (methodGoogle) {
+                methodGoogle.addEventListener('change', function() {
+                    console.log('Google method selected');
+                    if (emailOtpSection) emailOtpSection.classList.add('d-none');
+                    if (google2faSection) google2faSection.classList.remove('d-none');
+                });
+            }
+
+            // Show email OTP section by default since it's checked
+            if (emailOtpSection) {
+                setTimeout(function() {
+                    emailOtpSection.classList.remove('d-none');
+                }, 100);
+            }
+
+            // Attach OTP event listeners directly - elements exist in DOM even when hidden
+            // Send OTP
+            var sendOtpBtn = document.getElementById('sendOtpBtn');
+            console.log('Send OTP Button found:', sendOtpBtn);
+            if (sendOtpBtn) {
+                sendOtpBtn.onclick = function() {
+                    console.log('Send OTP button clicked');
+                    var btn = this;
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Sending...';
+
+                    var signatureData = document.getElementById('signatureData').value;
+                    console.log('Signature data:', signatureData ? 'found' : 'not found');
+
+                    var formData = new FormData();
+                    formData.append('signature', signatureData);
+                    formData.append('_token', document.querySelector('meta[name="csrf-token"]').content);
+
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('POST', '/approver/otp/send/' + leaveId, true);
+                    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                    xhr.onload = function() {
+                        console.log('XHR response status:', xhr.status);
+                        console.log('XHR response:', xhr.responseText);
+                        if (xhr.status === 200) {
+                            try {
+                                var data = JSON.parse(xhr.responseText);
+                                if (data.success) {
+                                    var otpSendSection = document.getElementById('otpSendSection');
+                                    var otpInputSection = document.getElementById('otpInputSection');
+                                    var verifyOtpBtn = document.getElementById('verifyOtpBtn');
+                                    if (otpSendSection) otpSendSection.classList.add('d-none');
+                                    if (otpInputSection) otpInputSection.classList.remove('d-none');
+                                    if (verifyOtpBtn) verifyOtpBtn.disabled = false;
+                                    startResendCountdown();
+                                } else {
+                                    alert(data.message || 'Failed to send OTP. Please try again.');
+                                    btn.disabled = false;
+                                    btn.innerHTML = '<i class="bi bi-envelope me-1"></i> Send OTP Code';
+                                }
+                            } catch (e) {
+                                console.error('JSON parse error:', e);
+                                alert('Error parsing response. Please try again.');
+                                btn.disabled = false;
+                                btn.innerHTML = '<i class="bi bi-envelope me-1"></i> Send OTP Code';
+                            }
+                        } else {
+                            alert('Server error. Please try again.');
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="bi bi-envelope me-1"></i> Send OTP Code';
+                        }
+                    };
+                    xhr.onerror = function() {
+                        console.error('XHR error');
+                        alert('Network error. Please try again.');
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="bi bi-envelope me-1"></i> Send OTP Code';
+                    };
+                    xhr.send(formData);
+                };
+            } else {
+                console.error('Send OTP button not found!');
+            }
+
+            // Verify OTP
+            var verifyOtpBtn = document.getElementById('verifyOtpBtn');
+            if (verifyOtpBtn) {
+                verifyOtpBtn.onclick = function() {
+                    // Check which method is selected
+                    var methodEmail = document.getElementById('methodEmail');
+                    var methodGoogle = document.getElementById('methodGoogle');
+                    var currentMethod = methodEmail && methodEmail.checked ? 'email' : 'google2fa';
+
+                    var code = '';
+                    var verificationUrl = '';
+
+                    if (currentMethod === 'google2fa') {
+                        var google2faCodeInput = document.getElementById('google2faCode');
+                        code = google2faCodeInput ? google2faCodeInput.value.trim() : '';
+                        verificationUrl = '/approver/otp/verify-google2fa/' + leaveId;
+                    } else {
+                        var otpCodeInput = document.getElementById('otpCode');
+                        code = otpCodeInput ? otpCodeInput.value.trim() : '';
+                        verificationUrl = '/approver/otp/verify/' + leaveId;
+                    }
+
+                    if (currentMethod === 'google2fa') {
+                        if (code.length !== 6 && code.length !== 8) {
+                            alert('Please enter the 6 or 8-digit Google Authenticator code.');
+                            return;
+                        }
+                    } else {
+                        if (code.length !== 6) {
+                            alert('Please enter the 6-digit OTP code.');
+                            return;
+                        }
+                    }
+
+                    var btn = this;
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Verifying...';
+
+                    var formData = new FormData();
+                    formData.append('code', code);
+                    formData.append('_token', document.querySelector('meta[name="csrf-token"]').content);
+
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('POST', verificationUrl, true);
+                    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                    xhr.onload = function() {
+                        if (xhr.status === 200) {
+                            try {
+                                var data = JSON.parse(xhr.responseText);
+                                if (data.success) {
+                                    if (data.temporary_signature) {
+                                        document.getElementById('signatureData').value = data.temporary_signature;
+                                    }
+
+                                    var otpSection = document.getElementById('otpSection');
+                                    var finalConfirmSection = document.getElementById('finalConfirmSection');
+                                    if (otpSection) otpSection.classList.add('d-none');
+                                    if (finalConfirmSection) finalConfirmSection.classList.remove('d-none');
+                                } else {
+                                    alert(data.message || 'Invalid code. Please try again.');
+                                    btn.disabled = false;
+                                    btn.innerHTML = '<i class="bi bi-shield-check me-1"></i> Verify & Continue';
+                                }
+                            } catch (e) {
+                                alert('Error parsing response. Please try again.');
+                                btn.disabled = false;
+                                btn.innerHTML = '<i class="bi bi-shield-check me-1"></i> Verify & Continue';
+                            }
+                        } else if (xhr.status === 400) {
+                            try {
+                                var data = JSON.parse(xhr.responseText);
+                                alert(data.message || 'Wrong code. Please try again.');
+                            } catch (e) {
+                                alert('Wrong code. Please try again.');
+                            }
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="bi bi-shield-check me-1"></i> Verify & Continue';
+                        } else {
+                            alert('Server error. Please try again.');
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="bi bi-shield-check me-1"></i> Verify & Continue';
+                        }
+                    };
+                    xhr.onerror = function() {
+                        alert('Network error. Please try again.');
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="bi bi-shield-check me-1"></i> Verify & Continue';
+                    };
+                    xhr.send(formData);
+                };
+            }
+
+            // Resend OTP
+            var resendOtpBtn = document.getElementById('resendOtpBtn');
+            if (resendOtpBtn) {
+                resendOtpBtn.onclick = function() {
+                    if (this.disabled) return;
+
+                    this.disabled = true;
+                    this.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Sending...';
+
+                    var formData = new FormData();
+                    formData.append('_token', document.querySelector('meta[name="csrf-token"]').content);
+
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('POST', '/approver/otp/resend/' + leaveId, true);
+                    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                    xhr.onload = function() {
+                        if (xhr.status === 200) {
+                            try {
+                                var data = JSON.parse(xhr.responseText);
+                                if (data.success) {
+                                    alert('New OTP sent successfully!');
+                                    startResendCountdown();
+                                } else {
+                                    alert(data.message || 'Failed to resend OTP. Please try again.');
+                                    this.disabled = false;
+                                    this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP';
+                                }
+                            } catch (e) {
+                                alert('Error parsing response. Please try again.');
+                                this.disabled = false;
+                                this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP';
+                            }
+                        } else {
+                            alert('Server error. Please try again.');
+                            this.disabled = false;
+                            this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP';
+                        }
+                    };
+                    xhr.onerror = function() {
+                        alert('Network error. Please try again.');
+                        this.disabled = false;
+                        this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Resend OTP';
+                    };
+                    xhr.send(formData);
+                };
+            }
+
+            // Back to signature from OTP
+            var backToSignatureFromOtp = document.getElementById('backToSignatureFromOtp');
+            if (backToSignatureFromOtp) {
+                backToSignatureFromOtp.onclick = function() {
+                    document.getElementById('otpSection').classList.add('d-none');
+                    document.getElementById('signatureSection').classList.remove('d-none');
+                    var otpCode = document.getElementById('otpCode');
+                    if (otpCode) otpCode.value = '';
+                    var otpSendSection = document.getElementById('otpSendSection');
+                    var otpInputSection = document.getElementById('otpInputSection');
+                    if (otpSendSection) otpSendSection.classList.remove('d-none');
+                    if (otpInputSection) otpInputSection.classList.add('d-none');
+                    var verifyOtpBtn = document.getElementById('verifyOtpBtn');
+                    if (verifyOtpBtn) verifyOtpBtn.disabled = true;
+                    if (resendTimer) {
+                        clearInterval(resendTimer);
+                        resendTimer = null;
+                    }
+                };
+            }
+
+            // OTP input formatting
+            var otpInput = document.getElementById('otpCode');
+            if (otpInput) {
+                otpInput.oninput = function(e) {
+                    this.value = this.value.replace(/\D/g, '').substring(0, 6);
+                    // Enable verify button when code is entered
+                    var verifyOtpBtn = document.getElementById('verifyOtpBtn');
+                    if (verifyOtpBtn) {
+                        verifyOtpBtn.disabled = this.value.length < 6;
+                    }
+                };
+            }
+
+            // Google Authenticator input formatting
+            var google2faInput = document.getElementById('google2faCode');
+            if (google2faInput) {
+                google2faInput.oninput = function(e) {
+                    this.value = this.value.replace(/\D/g, '').substring(0, 8);
+                    // Enable verify button when code is entered
+                    var verifyOtpBtn = document.getElementById('verifyOtpBtn');
+                    if (verifyOtpBtn) {
+                        verifyOtpBtn.disabled = this.value.length < 6;
+                    }
+                };
+            }
+        }
+
+        // Handle final confirmation button
+        const finalConfirmBtn = document.getElementById('finalConfirmBtn');
+        if (finalConfirmBtn) {
+            finalConfirmBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+
+                if (requiresOtp) {
+                    // For OTP users, verification was already done (email OTP or Google Authenticator)
+                    // Submit to the OTP completion endpoint with the signature data
+                    const form = document.getElementById('actionForm');
+                    form.action = `/approver/leaves/` + leaveId + `/complete-with-otp`;
+                    form.method = 'POST';
+
+                    // Add action field to form
+                    const actionInput = document.createElement('input');
+                    actionInput.type = 'hidden';
+                    actionInput.name = 'action';
+                    actionInput.value = 'approved';
+                    form.appendChild(actionInput);
+
+                    // Submit the form
+                    form.submit();
+                } else {
+                    // For non-OTP users, submit normally
+                    const actionInput = document.createElement('input');
+                    actionInput.type = 'hidden';
+                    actionInput.name = 'action';
+                    actionInput.value = 'approved';
+                    document.getElementById('actionForm').appendChild(actionInput);
+
+                    // Submit the form
+                    document.getElementById('actionForm').submit();
+                }
+            });
+        }
+
+        // RETURN MODAL
+        const returnModal = document.getElementById('returnModal');
+        if (returnModal) {
+            document.getElementById('confirmReturnBtn')?.addEventListener('click', function() {
+                const reason = document.getElementById('returnReason').value.trim();
+                if (!reason) {
+                    alert('Please provide a reason for returning this application.');
+                    return;
+                }
+                
+                // Update the remarks field in the main form
+                const remarksField = document.querySelector('textarea[name="remarks"]');
+                if (remarksField) {
+                    remarksField.value = reason;
+                }
+                
+                // Create hidden input for action and submit
+                const actionInput = document.createElement('input');
+                actionInput.type = 'hidden';
+                actionInput.name = 'action';
+                actionInput.value = 'returned';
+                document.getElementById('actionForm').appendChild(actionInput);
+                document.getElementById('actionForm').submit();
+            });
+            
+            // Clear reason when modal is hidden
+            returnModal.addEventListener('hidden.bs.modal', function() {
+                document.getElementById('returnReason').value = '';
+            });
+        }
+
+        // DISAPPROVE MODAL
+        const disapproveModal = document.getElementById('disapproveModal');
+        if (disapproveModal) {
+            document.getElementById('confirmDisapproveBtn')?.addEventListener('click', function() {
+                const reason = document.getElementById('disapproveReason').value.trim();
+                if (!reason) {
+                    alert('Please provide a reason for disapproving this application.');
+                    return;
+                }
+                
+                // Update the remarks field in the main form
+                const remarksField = document.querySelector('textarea[name="remarks"]');
+                if (remarksField) {
+                    remarksField.value = reason;
+                }
+                
+                // Create hidden input for action and submit
+                const actionInput = document.createElement('input');
+                actionInput.type = 'hidden';
+                actionInput.name = 'action';
+                actionInput.value = 'disapproved';
+                document.getElementById('actionForm').appendChild(actionInput);
+                document.getElementById('actionForm').submit();
+            });
+            
+            // Clear reason when modal is hidden
+            disapproveModal.addEventListener('hidden.bs.modal', function() {
+                document.getElementById('disapproveReason').value = '';
+            });
+        }
     @endif
   });
 </script>

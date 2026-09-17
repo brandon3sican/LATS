@@ -5,6 +5,7 @@ use App\Http\Controllers\Controller;
 use App\Models\LeaveAttachment;
 use App\Models\LeaveType;
 use App\Services\LeaveRules\RequiredDocsEvaluator;
+use App\Services\AuditLogService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +17,12 @@ use App\Mail\{LeaveActionRequired, LeaveStatusUpdated};
 
 class LeaveController extends Controller
 {
+    protected AuditLogService $auditLogService;
+
+    public function __construct(AuditLogService $auditLogService)
+    {
+        $this->auditLogService = $auditLogService;
+    }
     public function index(Request $request)
     {
         $user = $request->user()->loadMissing('employee');
@@ -107,6 +114,7 @@ class LeaveController extends Controller
             'reason' => 'required|string|max:2000',
             'commutation' => 'nullable|string|max:50',
             'details' => 'nullable|array',
+            'signature_data' => 'required|string',
             'attachments' => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'max:5120', 'mimes:pdf,doc,docx,jpg,jpeg,png'],
         ]);
@@ -187,6 +195,27 @@ class LeaveController extends Controller
         }
 
         $leave = DB::transaction(function () use ($validated, $user, $request, $details, $start_date, $end_date) {
+            // Save user signature if provided
+            if (!empty($validated['signature_data'])) {
+                $signatureData = $validated['signature_data'];
+                
+                // Remove the data URI prefix if present
+                if (preg_match('/^data:image\/(\w+);base64,/', $signatureData, $matches)) {
+                    $extension = $matches[1];
+                    $signatureData = substr($signatureData, strpos($signatureData, ',') + 1);
+                    $signatureImage = base64_decode($signatureData);
+                    
+                    // Generate filename and store
+                    $filename = 'signature_' . $user->id . '_' . time() . '.' . $extension;
+                    $path = 'signatures/' . $filename;
+                    
+                    \Storage::disk('public')->put($path, $signatureImage);
+                    
+                    // Update user's signature_path
+                    $user->signature_path = $path;
+                    $user->save();
+                }
+            }
 
             $leave = LeaveApplication::create([
                 'employee_id' => $user->employee->id,
@@ -224,6 +253,9 @@ class LeaveController extends Controller
 
             return $leave;
         });
+
+        // Log leave application creation
+        $this->auditLogService->logLeaveCreation($user, $leave->id, $request);
 
         // -------------------------------------------------------------
         // NOTIFY THE FIRST APPROVER (STEP 1)
@@ -319,6 +351,9 @@ class LeaveController extends Controller
         $leave->cancellation_status = 'pending';
         $leave->cancellation_reason = $request->input('cancellation_reason');
         $leave->save();
+
+        // Log cancellation request
+        $this->auditLogService->logCancellationRequest($user, $leave->id, $request->input('cancellation_reason'), $request);
 
         // Email to EMPLOYEE (Confirmation)
         try {

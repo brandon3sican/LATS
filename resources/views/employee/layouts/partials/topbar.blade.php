@@ -53,18 +53,32 @@
                             </form>
                         @endif
                     </li>
-                    @forelse($user->unreadNotifications as $notification)
+                    @forelse($user->notifications()->latest()->get() as $notification)
+                        @php
+                            $isUnread = is_null($notification->read_at);
+                        @endphp
                         <li>
-                            <a class="dropdown-item py-2 text-wrap border-bottom" href="{{ route('notifications.read', $notification->id) }}">
+                            <a class="dropdown-item py-2 text-wrap border-bottom {{ $isUnread ? 'bg-light' : '' }}" href="{{ route('notifications.read', $notification->id) }}">
                                 <div class="d-flex justify-content-between align-items-start">
-                                    <div class="small fw-bold text-primary">{{ $notification->data['applicant_name'] }} ({{ $notification->data['leave_type'] }})</div>
+                                    @if(isset($notification->data['applicant_name']))
+                                        <div class="small fw-bold text-primary">{{ $notification->data['applicant_name'] }} ({{ $notification->data['leave_type'] }})</div>
+                                    @elseif(isset($notification->data['user_name']))
+                                        <div class="small fw-bold text-primary">{{ $notification->data['user_name'] }}</div>
+                                    @else
+                                        <div class="small fw-bold text-primary">System Notification</div>
+                                    @endif
                                     <div class="text-muted" style="font-size: 0.65rem;">{{ $notification->created_at->diffForHumans(null, true, true) }}</div>
                                 </div>
                                 <div class="small text-muted mt-1" style="font-size: 0.8rem;">{{ $notification->data['message'] }}</div>
+                                @if($isUnread)
+                                    <div class="small text-primary mt-1" style="font-size: 0.7rem;">
+                                        <i class="bi bi-circle-fill"></i> New
+                                    </div>
+                                @endif
                             </a>
                         </li>
                     @empty
-                        <li class="px-4 py-4 text-center text-muted small">No new notifications.</li>
+                        <li class="px-4 py-4 text-center text-muted small">No notifications.</li>
                     @endforelse
                 </ul>
             </div>
