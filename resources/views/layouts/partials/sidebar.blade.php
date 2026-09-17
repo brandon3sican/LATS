@@ -83,6 +83,9 @@
     @if ($isApprover)
         <div class="lais-nav-section">
             <div class="lais-nav-title">Approver</div>
+            <a class="lais-nav-link {{ $active('approver.dashboard') }}" href="{{ route('approver.dashboard') }}">
+                <i class="bi bi-speedometer2"></i> Approver Dashboard
+            </a>
             <a class="lais-nav-link {{ $active('approver.inbox') }}" href="{{ route('approver.inbox') }}">
                 <i class="bi bi-inbox"></i> Inbox (Pending)
             </a>

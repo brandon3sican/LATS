@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Crypt;
 
 class AuditLog extends Model
 {
@@ -45,6 +46,18 @@ class AuditLog extends Model
     public function leaveApplication(): BelongsTo
     {
         return $this->belongsTo(LeaveApplication::class);
+    }
+
+    /**
+     * Get decrypted IP address
+     */
+    public function getDecryptedIpAddressAttribute(): ?string
+    {
+        try {
+            return $this->ip_address ? Crypt::decryptString($this->ip_address) : null;
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 
     // Scope methods for filtering

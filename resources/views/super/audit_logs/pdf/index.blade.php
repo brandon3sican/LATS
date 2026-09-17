@@ -43,31 +43,31 @@
     <tbody>
       @forelse($auditLogs as $log)
         @php
-            $badgeClass = match($log->action_type) {
-                'approval' => 'badge-success',
-                'cancellation' => 'badge-danger',
-                'view' => 'badge-info',
-                'export' => 'badge-primary',
-                'dashboard' => 'badge-secondary',
-                'inbox' => 'badge-warning',
-                default => 'badge-secondary',
-            };
+            $actionType = $log->action_type ?? 'unknown';
+            $badgeClass = 'badge-secondary';
+            if ($actionType === 'approval') $badgeClass = 'badge-success';
+            elseif ($actionType === 'cancellation') $badgeClass = 'badge-danger';
+            elseif ($actionType === 'cancellation_request') $badgeClass = 'badge-warning';
+            elseif ($actionType === 'cancellation_action') $badgeClass = 'badge-warning';
+            elseif ($actionType === 'creation') $badgeClass = 'badge-primary';
+            elseif ($actionType === 'view') $badgeClass = 'badge-info';
+            else $badgeClass = 'badge-secondary'; // Only display leave-related actions
         @endphp
       <tr>
         <td>
-          <div>{{ $log->created_at->format('M d, Y') }}</div>
-          <div class="muted">{{ $log->created_at->format('H:i:s') }}</div>
+          <div>{{ $log->created_at ? $log->created_at->format('M d, Y') : 'N/A' }}</div>
+          <div class="muted">{{ $log->created_at ? $log->created_at->format('H:i:s') : 'N/A' }}</div>
         </td>
         <td>
           <div>{{ $log->user ? $log->user->name : 'N/A' }}</div>
           <div class="muted">{{ $log->user ? $log->user->email : '' }}</div>
         </td>
         <td>
-          <span class="badge {{ $badgeClass }}">{{ ucfirst($log->action_type) }}</span>
+          <span class="badge {{ $badgeClass }}">{{ ucfirst($actionType) }}</span>
         </td>
-        <td>{{ ucfirst($log->action) }}</td>
+        <td>{{ ucfirst($log->action ?? 'N/A') }}</td>
         <td>
-          <div>{{ $log->description }}</div>
+          <div>{{ $log->description ?? 'N/A' }}</div>
           @if($log->leave_application_id)
             <div class="muted">Leave #{{ $log->leave_application_id }}</div>
           @endif
@@ -81,7 +81,7 @@
         </td>
         <td>{{ $log->office ? $log->office->name : 'N/A' }}</td>
         <td>{{ $log->division ? $log->division->name : 'N/A' }}</td>
-        <td>{{ $log->ip_address ?? 'N/A' }}</td>
+        <td>{{ $log->decrypted_ip_address ?? 'N/A' }}</td>
       </tr>
       @empty
         <tr>

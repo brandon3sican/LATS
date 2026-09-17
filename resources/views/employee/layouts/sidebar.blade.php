@@ -14,6 +14,7 @@
         $hasRole('approver_division_chief') ||
         $hasRole('approver_personnel') ||
         $hasRole('approver_chief_personnel') ||
+        $hasRole('approver_chief_admin') ||
         $hasRole('approver_ard_ms');
     $isOfficeAdmin = $hasRole('office_admin');
     $isSuper = $hasRole('super_admin');
@@ -43,12 +44,17 @@
                 Apply Leave
             </a>
 
-            {{-- add later when you create these routes/pages --}}
-            {{-- <a class="list-group-item list-group-item-action" href="{{ route('employee.leaves.index') }}">My Leaves</a> --}}
+            <a class="list-group-item list-group-item-action" href="{{ route('employee.leaves.index') }}">
+                My Leaves
+            </a>
         @endif
 
         @if ($isApprover)
             <div class="mt-3 small text-uppercase text-muted">Approver</div>
+
+            <a class="list-group-item list-group-item-action" href="{{ route('approver.dashboard') }}">
+                Approver Dashboard
+            </a>
 
             <a class="list-group-item list-group-item-action" href="{{ route('approver.inbox') }}">
                 Inbox (Pending)

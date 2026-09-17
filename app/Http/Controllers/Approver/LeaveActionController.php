@@ -22,6 +22,7 @@ class LeaveActionController extends Controller
     {
         $this->auditLogService = $auditLogService;
     }
+
     public function show(Request $request, int $id)
     {
         $leave = LeaveApplication::with([
@@ -102,17 +103,17 @@ class LeaveActionController extends Controller
             }
         }
 
-        // Log view action for audit trail
-        $this->auditLogService->logView(
-            $user,
-            'leave_application',
-            $leave->id,
-            "Viewed leave application for approval review",
-            $request
-        );
-
         // Check if user requires OTP verification (Chief Personnel or ARD)
         $requiresOtp = $user->hasAnyRole(['approver_chief_personnel', 'approver_ard_ms']);
+
+        // Log view action for audit trail (per step tracking)
+        $this->auditLogService->logView(
+            $user,
+            $leave->id,
+            "Viewed leave application for approval review at step {$leave->current_step_order}",
+            $request,
+            $leave->current_step_order
+        );
 
         return view('approver.review', compact('leave', 'timeline', 'credits', 'history', 'canAction', 'requiresOtp'));
     }
@@ -152,42 +153,12 @@ class LeaveActionController extends Controller
 
         // If this is an approval action by a user who requires OTP verification
         if ($action === 'approved' && $requiresOtp) {
-            // Check if signature is already stored (from previous OTP verification)
-            if ($leave->temporary_signature) {
-                // Signature already verified via OTP or Google Authenticator
-                // Use the stored signature directly
-                $signatureData = $leave->temporary_signature;
-                $leave->update(['temporary_signature' => null]);
-
-                // Complete the approval with the stored signature
-                return $this->completeApprovalWithData($leave, $user, $action, $remarks, $signatureData);
-            }
-
-            // Process signature and store temporarily
-            $signatureData = $this->processSignature($request, $user);
-
-            if (!$signatureData) {
-                return back()->withErrors(['signature' => 'Signature processing failed.']);
-            }
-
-            // Store signature data in encrypted session
-            $sessionKey = 'otp_signature_' . $leave->id . '_' . $user->id;
-            Session::put($sessionKey, [
-                'signature' => $signatureData,
-                'action' => $action,
-                'remarks' => $remarks,
-                'expires_at' => now()->addMinutes(10)->toIso8601String(),
-            ]);
-
-            // Store signature in leave application for OTP verification
-            $leave->update(['temporary_signature' => $signatureData]);
-
             // Return JSON response indicating OTP is required
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => true,
                     'requires_otp' => true,
-                    'message' => 'Signature captured. Please verify with OTP to complete approval.',
+                    'message' => 'Please verify with OTP to complete approval.',
                 ]);
             }
 
@@ -205,25 +176,36 @@ class LeaveActionController extends Controller
         $user->loadMissing('roles', 'employee');
 
         // 2FA verification (email OTP or Google Authenticator) is already done by OtpController
-        // Just retrieve the temporary signature from the leave application
         $leave = LeaveApplication::with('employee.user')->lockForUpdate()->findOrFail($id);
         $this->authorizeAction($user, $leave);
-
-        // Get temporary signature from leave application
-        $signature = $leave->temporary_signature;
-        if (!$signature) {
-            return back()->withErrors(['otp' => 'Signature data not found. Please try the approval process again.']);
-        }
 
         // Get action and remarks from request
         $action = $request->input('action');
         $remarks = $request->input('remarks');
 
-        // Complete the approval with the temporary signature
-        $result = $this->completeApprovalWithData($leave, $user, $action, $remarks, $signature);
+        // Require signature for approval actions
+        if ($action === 'approved') {
+            $request->validate([
+                'signature' => 'required|string',
+            ]);
+        }
 
-        // Clean up temporary signature
-        $leave->update(['temporary_signature' => null]);
+        // Process signature from request
+        $signatureData = null;
+        if ($action === 'approved' && $request->has('signature')) {
+            $signatureData = $this->processSignature($request, $user);
+            if (!$signatureData) {
+                return back()->withErrors(['signature' => 'Signature processing failed.']);
+            }
+        }
+
+        // Complete the approval with the signature
+        $result = $this->completeApprovalWithData($leave, $user, $action, $remarks, $signatureData);
+
+        // Clean up temporary signature if it exists
+        if ($leave->temporary_signature) {
+            $leave->update(['temporary_signature' => null]);
+        }
 
         return $result;
     }
@@ -313,7 +295,7 @@ class LeaveActionController extends Controller
 
             LeaveApproval::create($approvalData);
 
-            // Log approval action for audit trail
+            // Log the approval action in audit logs (only first action per user per leave per step)
             $this->auditLogService->logApproval(
                 $user,
                 $action,
@@ -474,15 +456,6 @@ class LeaveActionController extends Controller
 
         $leave->save();
 
-        // Log cancellation action for audit trail
-        $this->auditLogService->logCancellation(
-            $user,
-            $leave->id,
-            $leave->current_step_order,
-            $request->input('cancellation_action') === 'approved' ? 'Cancellation approved by Personnel' : 'Cancellation rejected by Personnel',
-            $request
-        );
-
         LeaveApproval::create([
             'leave_application_id' => $leave->id,
             'step_order' => $leave->current_step_order,
@@ -491,6 +464,15 @@ class LeaveActionController extends Controller
             'remarks' => 'Processed employee cancellation request.',
             'acted_at' => \Carbon\Carbon::now(),
         ]);
+
+        // Log the cancellation action in audit logs
+        $this->auditLogService->logCancellationAction(
+            $user,
+            $request->input('cancellation_action'),
+            $leave->id,
+            'Processed employee cancellation request.',
+            $request
+        );
 
         // Send email to the employee with the result of the cancellation
         try {

@@ -7,19 +7,12 @@ use App\Models\ApprovalStep;
 use App\Models\Division;
 use App\Models\LeaveApplication;
 use App\Models\LeaveApproval;
-use App\Services\AuditLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
-    protected AuditLogService $auditLogService;
-
-    public function __construct(AuditLogService $auditLogService)
-    {
-        $this->auditLogService = $auditLogService;
-    }
     public function index(Request $request)
     {
         /** @var \App\Models\User $user */
@@ -117,7 +110,37 @@ class DashboardController extends Controller
         $divisions = collect();
         $selectedDivision = null;
 
-        if ($user->hasRole('approver_chief_personnel') && $officeId) {
+        // Only show efficiency metrics for super_admin (exempt from division requirement), admin, and approver_chief_personnel with division assigned
+        if (($user->hasRole('super_admin') || $user->hasRole('admin') || $user->hasRole('approver_chief_personnel')) && $officeId) {
+            // Admin and approver_chief_personnel require division assignment, super_admin is exempt
+            if (!$user->hasRole('super_admin') && (!$user->employee || !$user->employee->division_id)) {
+                // Skip efficiency metrics for non-super admins without division
+                $efficiencyMetrics = null;
+                $divisions = collect();
+                $selectedDivision = null;
+            } else {
+                // Calculate efficiency metrics (super_admin always reaches here, others only if they have division)
+                // Get division filter from request
+                $selectedDivision = $request->get('division_id');
+
+                // Fetch all divisions in the office for filter dropdown
+                $divisions = Division::where('office_id', $officeId)
+                    ->orderBy('name')
+                    ->get();
+
+                // Only calculate efficiency metrics if:
+                // 1. No division is selected (All Divisions), OR
+                // 2. Administrative Division is selected
+                $shouldShowMetrics = !$selectedDivision; // All divisions
+                if ($selectedDivision) {
+                    $selectedDivisionModel = Division::find($selectedDivision);
+                    if ($selectedDivisionModel && strcasecmp($selectedDivisionModel->name, 'Administrative Division') === 0) {
+                        $shouldShowMetrics = true;
+                    }
+                }
+                }
+
+                if ($shouldShowMetrics) {
             // Get division filter from request
             $selectedDivision = $request->get('division_id');
             
@@ -224,8 +247,8 @@ class DashboardController extends Controller
             // Calculate Approval Rate
             $totalApplications = (clone $leaveQuery)->count();
             $approvedApplicationsCount = (clone $leaveQuery)->where('status', 'approved')->count();
-            $approvalRate = $totalApplications > 0 
-                ? round(($approvedApplicationsCount / $totalApplications) * 100, 2) 
+            $approvalRate = $totalApplications > 0
+                ? round(($approvedApplicationsCount / $totalApplications) * 100, 2)
                 : 0;
 
             // Format hours to hours and minutes
@@ -253,8 +276,9 @@ class DashboardController extends Controller
                 'total_applications' => $totalApplications,
                 'approved_count' => $approvedApplicationsCount,
             ];
-            } // End of if ($selectedDivision)
-        } // End of if ($user->hasRole('approver_chief_personnel') && $officeId)
+                } // End of if ($shouldShowMetrics)
+            } // End of else (has division or is super_admin)
+        } // End of if (($user->hasRole('super_admin') || $user->hasRole('admin') || $user->hasRole('approver_chief_personnel')) && $officeId)
 
         // ---------------------------------------------------------
         // 3. Calendar Data (Grouped by Date for Flatpickr)
@@ -449,9 +473,6 @@ class DashboardController extends Controller
                 }
             }
         }
-
-        // Log dashboard access
-        $this->auditLogService->logDashboardAccess($user, $request);
 
         return view('approver.dashboard', compact('stats', 'leavesByDate', 'isPersonnelRole', 'efficiencyMetrics', 'divisions', 'selectedDivision'));
     }

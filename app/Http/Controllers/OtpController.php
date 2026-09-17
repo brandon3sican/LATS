@@ -7,7 +7,6 @@ use App\Http\Requests\OtpRequest;
 use App\Models\LeaveApplication;
 use App\Models\OneTimePassword;
 use App\Notifications\ApprovalOtpNotification;
-use App\Services\AuditLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
@@ -15,13 +14,6 @@ use Illuminate\Support\Facades\Session;
 
 class OtpController extends Controller
 {
-    protected AuditLogService $auditLogService;
-
-    public function __construct(AuditLogService $auditLogService)
-    {
-        $this->auditLogService = $auditLogService;
-    }
-
     public function sendOtp(Request $request, int $leaveId)
     {
         try {
@@ -29,16 +21,16 @@ class OtpController extends Controller
             $user = Auth::user();
             $user->loadMissing('roles', 'employee');
 
-            // Rate limiting: max 3 OTP sends per 5 minutes
+            // Rate limiting: max 10 OTP sends per 1 minute for testing
             $key = 'otp-send:' . $user->id . ':' . $leaveId;
-            if (RateLimiter::tooManyAttempts($key, 3)) {
+            if (RateLimiter::tooManyAttempts($key, 10)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Too many OTP requests. Please wait before trying again.',
                 ], 429);
             }
 
-            RateLimiter::hit($key, 300); // 5 minutes
+            RateLimiter::hit($key, 60); // 1 minute
 
             // Verify user has required role (Chief Personnel or ARD)
             if (!$user->hasAnyRole(['approver_chief_personnel', 'approver_ard_ms'])) {
@@ -54,15 +46,6 @@ class OtpController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'This leave application is not pending approval.',
-                ], 400);
-            }
-
-            // Signature should already be stored by LeaveActionController
-            // Just verify it exists
-            if (!$leave->temporary_signature) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Signature not found. Please start the approval process again.',
                 ], 400);
             }
 
@@ -91,24 +74,6 @@ class OtpController extends Controller
                 // Continue even if email fails - the OTP is still generated
             }
 
-            // Log OTP generation for audit trail
-            try {
-                $this->auditLogService->logCustom(
-                    $user,
-                    'otp_generated',
-                    "OTP generated for leave application #{$leave->id}",
-                    [
-                        'leave_id' => $leave->id,
-                        'otp_id' => $otp->id,
-                        'expires_at' => $otp->expires_at->toIso8601String(),
-                    ],
-                    $request
-                );
-            } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Failed to log OTP generation: ' . $e->getMessage());
-                // Continue even if logging fails
-            }
-
             return response()->json([
                 'success' => true,
                 'message' => 'OTP sent successfully to your email.',
@@ -125,6 +90,14 @@ class OtpController extends Controller
 
     public function verifyOtp(OtpRequest $request, int $leaveId)
     {
+        // Debug logging
+        \Log::info('OTP verification attempt', [
+            'user_id' => Auth::id(),
+            'leave_id' => $leaveId,
+            'request_data' => $request->all(),
+            'code_value' => $request->input('code'),
+        ]);
+
         /** @var \App\Models\User $user */
         $user = Auth::user();
         $user->loadMissing('roles', 'employee');
@@ -149,51 +122,16 @@ class OtpController extends Controller
         }
 
         // Verify OTP
-        if (!$user->consumeOneTimePassword($request->otp)) {
-            try {
-                $this->auditLogService->logCustom(
-                    $user,
-                    'otp_verification_failed',
-                    "Failed OTP verification for leave application #{$leaveId}",
-                    [
-                        'leave_id' => $leaveId,
-                        'reason' => 'Invalid or expired OTP',
-                    ],
-                    $request
-                );
-            } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Failed to log OTP verification failure: ' . $e->getMessage());
-            }
-
+        if (!$user->consumeOneTimePassword($request->code)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid or expired OTP. Please try again.',
             ], 400);
         }
 
-        // Log successful OTP verification
-        try {
-            $this->auditLogService->logCustom(
-                $user,
-                'otp_verified',
-                "OTP verified successfully for leave application #{$leaveId}",
-                [
-                    'leave_id' => $leaveId,
-                ],
-                $request
-            );
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Failed to log OTP verification success: ' . $e->getMessage());
-        }
-
-        // Return the temporary signature in the response so it can be used for final approval
-        $leave = LeaveApplication::find($leaveId);
-        $temporarySignature = $leave->temporary_signature ?? null;
-
         return response()->json([
             'success' => true,
             'message' => 'OTP verified successfully. You can now complete the approval.',
-            'temporary_signature' => $temporarySignature,
         ]);
     }
 
@@ -239,50 +177,15 @@ class OtpController extends Controller
                     'code' => $code,
                 ]);
 
-                try {
-                    $this->auditLogService->logCustom(
-                        $user,
-                        'google2fa_verification_failed',
-                        "Failed Google Authenticator verification for leave application #{$leaveId}",
-                        [
-                            'leave_id' => $leaveId,
-                            'reason' => 'Invalid or expired code',
-                        ],
-                        $request
-                    );
-                } catch (\Exception $e) {
-                    \Illuminate\Support\Facades\Log::error('Failed to log Google Authenticator verification failure: ' . $e->getMessage());
-                }
-
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid or expired code. Please try again.',
                 ], 400);
             }
 
-            // Log successful Google Authenticator verification
-            try {
-                $this->auditLogService->logCustom(
-                    $user,
-                    'google2fa_verified',
-                    "Google Authenticator verified successfully for leave application #{$leaveId}",
-                    [
-                        'leave_id' => $leaveId,
-                    ],
-                    $request
-                );
-            } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Failed to log Google Authenticator verification success: ' . $e->getMessage());
-            }
-
-            // Return the temporary signature in the response so it can be used for final approval
-            $leave = LeaveApplication::find($leaveId);
-            $temporarySignature = $leave->temporary_signature ?? null;
-
             return response()->json([
                 'success' => true,
                 'message' => 'Google Authenticator verified successfully. You can now complete the approval.',
-                'temporary_signature' => $temporarySignature,
             ]);
         } catch (\Exception $e) {
             \Log::error('Google2fa verification error', [

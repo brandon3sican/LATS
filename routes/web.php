@@ -33,6 +33,7 @@ use App\Http\Controllers\Super\DivisionController as SuperDivisionController;
 use App\Http\Controllers\Super\DashboardController as SuperDashboardController;
 use App\Http\Controllers\Super\AuditLogController as SuperAuditLogController;
 use App\Http\Controllers\Super\ReportGeneratorController as SuperReportGeneratorController;
+use App\Http\Controllers\Super\LeaveController as SuperLeaveController;
 
 /*
 |--------------------------------------------------------------------------
@@ -56,9 +57,6 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('/profile', [\App\Http\Controllers\ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [\App\Http\Controllers\ProfileController::class, 'destroy'])->name('profile.destroy');
 
-    Route::get('/setup-account', [\App\Http\Controllers\Auth\ForcePasswordChangeController::class, 'edit'])->name('force-password.edit');
-    Route::post('/setup-account', [\App\Http\Controllers\Auth\ForcePasswordChangeController::class, 'update'])->name('force-password.update');
-
     Route::get('/my-profile', [\App\Http\Controllers\Employee\ProfileController::class, 'show'])->name('employee.profile.show');
     Route::post('/my-profile/signature', [\App\Http\Controllers\Employee\ProfileController::class, 'uploadSignature'])->name('employee.profile.signature');
     Route::get('/signature-preview/{path}', [SignatureController::class, 'show'])
@@ -81,7 +79,11 @@ Route::middleware(['auth'])->group(function () {
         if ($user->hasRole('super_admin')) return redirect()->route('super.dashboard');
         if ($user->hasRole('office_admin')) return redirect()->route('admin.dashboard');
 
-        // Check for any approver role
+        // Employee role takes priority for users with both employee and approver roles
+        // This allows approvers to create their own leave applications
+        if ($user->hasRole('employee')) return redirect()->route('employee.dashboard');
+
+        // Check for any approver role (if they don't have employee role)
         if ($user->roles->pluck('key')->intersect([
             'approver_division_chief',
             'approver_personnel',
@@ -91,8 +93,6 @@ Route::middleware(['auth'])->group(function () {
         ])->isNotEmpty()) {
             return redirect()->route('approver.dashboard');
         }
-
-        if ($user->hasRole('employee')) return redirect()->route('employee.dashboard');
 
         abort(403, 'Your account does not have a valid role assigned. Please contact the administrator.');
     })->name('dashboard');
@@ -115,6 +115,7 @@ Route::middleware(['auth'])->group(function () {
     })->name('notifications.read');
 
     Route::post('/notifications/mark-all-read', [NotificationController::class, 'markAllAsRead'])->name('notifications.markAllRead');
+    Route::post('/notifications/{id}/mark-read', [NotificationController::class, 'markAsRead'])->name('notifications.markRead');
 
     /*
     |--------------------------------------------------------------------------
@@ -229,7 +230,11 @@ Route::middleware(['auth'])->group(function () {
 
         Route::resource('divisions', SuperDivisionController::class);
 
-        Route::resource('users', SuperUserController::class);
+        Route::resource('users', SuperUserController::class)->except(['show', 'destroy']);
+        Route::get('users/{id}', [SuperUserController::class, 'show'])->name('users.show');
+        Route::delete('users/{id}', [SuperUserController::class, 'destroy'])->name('users.destroy');
+        Route::post('users/{id}/reset-password', [SuperUserController::class, 'resetPassword'])->name('users.resetPassword');
+        Route::get('users/{id}/modal-data', [SuperUserController::class, 'getModalData'])->name('users.modalData');
     });
 
     /*
@@ -241,6 +246,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/audit-logs', [SuperAuditLogController::class, 'index'])->name('audit-logs.index');
         Route::get('/audit-logs/export', [SuperAuditLogController::class, 'export'])->name('audit-logs.export');
         Route::get('/audit-logs/{id}', [SuperAuditLogController::class, 'show'])->name('audit-logs.show');
+        Route::get('/leaves/{id}', [SuperLeaveController::class, 'show'])->name('leaves.show');
     });
 
     /*

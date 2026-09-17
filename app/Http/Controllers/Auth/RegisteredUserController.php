@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Office;
+use App\Models\Division;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,6 +15,7 @@ use Illuminate\Validation\Rules;
 use Illuminate\View\View;
 use App\Models\Employee;
 use App\Models\Role;
+use App\Notifications\NewUserRegistrationNotification;
 
 class RegisteredUserController extends Controller
 {
@@ -21,7 +24,9 @@ class RegisteredUserController extends Controller
      */
     public function create(): View
     {
-        return view('auth.register');
+        $offices = Office::orderBy('name')->get();
+        $divisions = Division::all();
+        return view('auth.register', compact('offices', 'divisions'));
     }
 
     /**
@@ -37,6 +42,8 @@ class RegisteredUserController extends Controller
             'middle_name' => ['nullable', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
+            'office_id' => ['required', 'exists:offices,id'],
+            'division_id' => ['nullable', 'exists:divisions,id'],
         ]);
 
         $user = User::create([
@@ -45,20 +52,34 @@ class RegisteredUserController extends Controller
             'middle_name' => $request->middle_name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
+            'is_first_login' => false, // Don't force password change on first login
         ]);
 
-        $user->roles()->attach(3);
+        // Assign employee role to all new users
+        $employeeRole = Role::where('key', 'employee')->first();
+        if ($employeeRole) {
+            $user->roles()->attach($employeeRole->id);
+        }
 
         Employee::create([
             'user_id' => $user->id,
-            'office_id' => 1,      // Can be set later by Admin
-            'division_id' => null,    // Can be set later by Admin
+            'office_id' => $request->office_id,
+            'division_id' => $request->division_id,
             'position_title' => 'Pending Assignment', // Default text
             'salary_grade' => null,
             'status' => 'active',
         ]);
 
         event(new Registered($user));
+
+        // Notify all super admins about the new user registration
+        $superAdmins = User::whereHas('roles', function($query) {
+            $query->where('key', 'super_admin');
+        })->get();
+
+        foreach ($superAdmins as $superAdmin) {
+            $superAdmin->notify(new NewUserRegistrationNotification($user));
+        }
 
         Auth::login($user);
 

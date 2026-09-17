@@ -54,18 +54,57 @@
                             </form>
                         @endif
                     </li>
-                    @forelse($user->unreadNotifications as $notification)
+                    @forelse($user->notifications()->latest()->get() as $notification)
                         <li>
-                            <a class="dropdown-item py-2 text-wrap border-bottom" href="{{ route('notifications.read', $notification->id) }}">
-                                <div class="d-flex justify-content-between align-items-start">
-                                    <div class="small fw-bold text-primary">{{ $notification->data['applicant_name'] }} ({{ $notification->data['leave_type'] }})</div>
-                                    <div class="text-muted" style="font-size: 0.65rem;">{{ $notification->created_at->diffForHumans(null, true, true) }}</div>
-                                </div>
-                                <div class="small text-muted mt-1" style="font-size: 0.8rem;">{{ $notification->data['message'] }}</div>
-                            </a>
+                            @php
+                                $employeeId = $notification->data['employee_id'] ?? null;
+                                // For backward compatibility with old notifications
+                                if (!$employeeId && isset($notification->data['user_id'])) {
+                                    $employee = \App\Models\Employee::where('user_id', $notification->data['user_id'])->first();
+                                    $employeeId = $employee ? $employee->id : null;
+                                }
+                                $isUnread = is_null($notification->read_at);
+                            @endphp
+                            @if($employeeId && isset($notification->data['url']) && str_contains($notification->data['url'], 'super/users'))
+                                <a class="dropdown-item py-2 text-wrap border-bottom notification-link {{ $isUnread ? 'bg-light' : '' }}"
+                                   href="#"
+                                   data-notification-id="{{ $notification->id }}"
+                                   data-employee-id="{{ $employeeId }}"
+                                   data-is-user-notification="true">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div class="small fw-bold text-primary">{{ $notification->data['user_name'] }}</div>
+                                        <div class="text-muted" style="font-size: 0.65rem;">{{ $notification->created_at->diffForHumans(null, true, true) }}</div>
+                                    </div>
+                                    <div class="small text-muted mt-1" style="font-size: 0.8rem;">{{ $notification->data['message'] }}</div>
+                                    @if($isUnread)
+                                        <div class="small text-primary mt-1" style="font-size: 0.7rem;">
+                                            <i class="bi bi-circle-fill"></i> New
+                                        </div>
+                                    @endif
+                                </a>
+                            @else
+                                <a class="dropdown-item py-2 text-wrap border-bottom {{ $isUnread ? 'bg-light' : '' }}" href="{{ route('notifications.read', $notification->id) }}">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        @if(isset($notification->data['applicant_name']))
+                                            <div class="small fw-bold text-primary">{{ $notification->data['applicant_name'] }} ({{ $notification->data['leave_type'] }})</div>
+                                        @elseif(isset($notification->data['user_name']))
+                                            <div class="small fw-bold text-primary">{{ $notification->data['user_name'] }}</div>
+                                        @else
+                                            <div class="small fw-bold text-primary">System Notification</div>
+                                        @endif
+                                        <div class="text-muted" style="font-size: 0.65rem;">{{ $notification->created_at->diffForHumans(null, true, true) }}</div>
+                                    </div>
+                                    <div class="small text-muted mt-1" style="font-size: 0.8rem;">{{ $notification->data['message'] }}</div>
+                                    @if($isUnread)
+                                        <div class="small text-primary mt-1" style="font-size: 0.7rem;">
+                                            <i class="bi bi-circle-fill"></i> New
+                                        </div>
+                                    @endif
+                                </a>
+                            @endif
                         </li>
                     @empty
-                        <li class="px-4 py-4 text-center text-muted small">No new notifications.</li>
+                        <li class="px-4 py-4 text-center text-muted small">No notifications.</li>
                     @endforelse
                 </ul>
             </div>
@@ -128,3 +167,42 @@
     @include('layouts.partials.sidebar')
   </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle user notification clicks to open modal instead of redirecting
+    document.querySelectorAll('.notification-link[data-is-user-notification="true"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+
+            const notificationId = this.getAttribute('data-notification-id');
+            const employeeId = this.getAttribute('data-employee-id');
+
+            // Mark notification as read
+            fetch(`/notifications/${notificationId}/mark-read`, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Notification marked as read successfully
+                // Keep the notification visible but mark it as read (no removal)
+            })
+            .catch(error => {
+                console.error('Error marking notification as read:', error);
+            });
+
+            // Check if we're on the users index page and open the modal
+            if (typeof openViewUserModal === 'function' && employeeId) {
+                openViewUserModal(employeeId);
+            } else {
+                // If not on users index page or no employee ID, redirect to the user show page
+                window.location.href = `/super/users/${employeeId}`;
+            }
+        });
+    });
+});
+</script>

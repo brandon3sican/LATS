@@ -1550,9 +1550,9 @@
 
                 if (requiresOtp) {
                     // For OTP users, verification was already done (email OTP or Google Authenticator)
-                    // Submit to the normal approval endpoint with the signature data
+                    // Submit to the OTP completion endpoint with the signature data
                     const form = document.getElementById('actionForm');
-                    form.action = `/approver/leaves/` + leaveId + `/action`;
+                    form.action = `/approver/leaves/` + leaveId + `/complete-with-otp`;
                     form.method = 'POST';
 
                     // Add action field to form

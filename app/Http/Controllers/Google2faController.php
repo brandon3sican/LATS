@@ -3,20 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\Google2faRequest;
-use App\Services\AuditLogService;
 use App\Services\Google2faService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class Google2faController extends Controller
 {
-    protected AuditLogService $auditLogService;
-
-    public function __construct(AuditLogService $auditLogService)
-    {
-        $this->auditLogService = $auditLogService;
-    }
-
     public function showSetup()
     {
         /** @var \App\Models\User $user */
@@ -50,17 +42,6 @@ class Google2faController extends Controller
             $qrCodeUrl = $user->getGoogle2faQrCodeUrl();
             \Log::info('QR code generated', ['url' => $qrCodeUrl]);
 
-            // Log Google Authenticator setup initiation
-            $this->auditLogService->logCustom(
-                $user,
-                'google2fa_setup_initiated',
-                "Google Authenticator setup initiated for user",
-                [
-                    'user_id' => $user->id,
-                ],
-                $request
-            );
-
             return response()->json([
                 'success' => true,
                 'secret' => $secret,
@@ -87,18 +68,6 @@ class Google2faController extends Controller
 
         try {
             if ($user->confirmGoogle2fa($request->code)) {
-                // Log successful Google Authenticator enablement
-                $this->auditLogService->logCustom(
-                    $user,
-                    'google2fa_enabled',
-                    "Google Authenticator successfully enabled for user",
-                    [
-                        'user_id' => $user->id,
-                        'enabled_at' => $user->google2fa_enabled_at,
-                    ],
-                    $request
-                );
-
                 return response()->json([
                     'success' => true,
                     'message' => 'Google Authenticator has been successfully enabled.',
@@ -125,17 +94,6 @@ class Google2faController extends Controller
 
         try {
             $user->disableGoogle2fa();
-
-            // Log Google Authenticator disablement
-            $this->auditLogService->logCustom(
-                $user,
-                'google2fa_disabled',
-                "Google Authenticator disabled for user",
-                [
-                    'user_id' => $user->id,
-                ],
-                $request
-            );
 
             return response()->json([
                 'success' => true,
@@ -187,17 +145,6 @@ class Google2faController extends Controller
             $newCodes = $user->generateRecoveryCodes();
             $user->google2fa_recovery_codes = json_encode($newCodes);
             $user->save();
-
-            // Log recovery codes regeneration
-            $this->auditLogService->logCustom(
-                $user,
-                'google2fa_recovery_codes_regenerated',
-                "Google Authenticator recovery codes regenerated for user",
-                [
-                    'user_id' => $user->id,
-                ],
-                $request
-            );
 
             return response()->json([
                 'success' => true,

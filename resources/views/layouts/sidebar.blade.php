@@ -14,6 +14,7 @@
         $hasRole('approver_division_chief') ||
         $hasRole('approver_personnel') ||
         $hasRole('approver_chief_personnel') ||
+        $hasRole('approver_chief_admin') ||
         $hasRole('approver_ard_ms');
     $isChiefPersonnel = $hasRole('approver_chief_personnel');
     $isOfficeAdmin = $hasRole('office_admin');
@@ -59,6 +60,10 @@
 
         @if ($isApprover)
             <div class="mt-3 small text-uppercase text-muted">Approver</div>
+
+            <a class="list-group-item list-group-item-action" href="{{ route('approver.dashboard') }}">
+                Approver Dashboard
+            </a>
 
             <a class="list-group-item list-group-item-action" href="{{ route('approver.inbox') }}">
                 Inbox (Pending)

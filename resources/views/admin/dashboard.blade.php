@@ -56,6 +56,102 @@
         </div>
     </div>
 
+    {{-- Efficiency Metrics Row (Admin Only with Division Assignment) --}}
+    @if($efficiencyMetrics && auth()->user()->employee && auth()->user()->employee->division_id)
+    <div class="row g-3 mb-4">
+        {{-- Average Approval Time --}}
+        <div class="col-md-4 col-sm-12">
+            <div class="card shadow-sm border-start border-4 border-success h-100">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <div class="text-muted small text-uppercase fw-bold">Avg Approval Time</div>
+                        <div class="fs-1 fw-bold text-dark">{{ $efficiencyMetrics['avg_approval_time_formatted'] }}</div>
+                    </div>
+                    <i class="bi bi-clock-history fs-1 text-success"></i>
+                </div>
+                <div class="card-footer bg-white">
+                    <div class="small text-muted">
+                        Based on {{ $efficiencyMetrics['approved_count'] }} approved applications
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Average Step Response Time --}}
+        <div class="col-md-4 col-sm-12">
+            <div class="card shadow-sm border-start border-4 border-info h-100">
+                <div class="card-body">
+                    <div class="text-muted small text-uppercase fw-bold mb-2">Avg Step Response Time</div>
+                    @if(!empty($efficiencyMetrics['step_response_times']))
+                        @foreach($efficiencyMetrics['step_response_times'] as $step => $data)
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="small">Step {{ $step }}:</span>
+                                <span class="small fw-bold">{{ $data['formatted'] }}</span>
+                            </div>
+                        @endforeach
+                    @else
+                        <div class="small text-muted">No data available</div>
+                    @endif
+                </div>
+            </div>
+        </div>
+
+        {{-- Approval Rate --}}
+        <div class="col-md-4 col-sm-12">
+            <div class="card shadow-sm border-start border-4 border-primary h-100">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <div class="text-muted small text-uppercase fw-bold">Approval Rate</div>
+                        <div class="fs-1 fw-bold text-dark">{{ $efficiencyMetrics['approval_rate'] }}%</div>
+                    </div>
+                    <i class="bi bi-check-circle fs-1 text-primary"></i>
+                </div>
+                <div class="card-footer bg-white">
+                    <div class="small text-muted">
+                        {{ $efficiencyMetrics['approved_count'] }} / {{ $efficiencyMetrics['total_applications'] }} approved
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Bottleneck Analysis --}}
+    @if($efficiencyMetrics['bottleneck_analysis'])
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-start border-4 border-warning">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">
+                        <i class="bi bi-exclamation-triangle text-warning me-2"></i>
+                        Bottleneck Analysis
+                    </h5>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="alert alert-warning mb-0">
+                                <strong>Slowest Approval Step:</strong> Step {{ $efficiencyMetrics['bottleneck_analysis']['step_order'] }}
+                                <br>
+                                <small>Average Response Time: {{ $efficiencyMetrics['bottleneck_analysis']['formatted'] }}</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="small text-muted mb-2">Step Performance Overview</h6>
+                            @foreach($efficiencyMetrics['step_response_times'] as $step => $data)
+                                <div class="d-flex justify-content-between mb-1">
+                                    <span class="small">Step {{ $step }}:</span>
+                                    <span class="small {{ $step == $efficiencyMetrics['bottleneck_analysis']['step_order'] ? 'text-danger fw-bold' : '' }}">
+                                        {{ $data['formatted'] }} ({{ $data['count'] }} actions)
+                                    </span>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+    @endif
+
     {{-- Interactive Chart Row --}}
     <div class="row">
         <div class="col-12">

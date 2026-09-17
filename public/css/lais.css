@@ -189,25 +189,28 @@
   font-size: 0.7rem;
   padding: 5px 12px;
   border-radius: 10px;
-  background: linear-gradient(135deg, rgba(59,130,246,0.25), rgba(139,92,246,0.2));
-  color: #a5b4fc;
-  border: 1px solid rgba(59,130,246,0.35);
+  background: linear-gradient(135deg, rgba(37,99,235,0.3), rgba(59,130,246,0.25));
+  color: #93c5fd;
+  border: 1px solid rgba(37,99,235,0.4);
   font-weight: 600;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(37,99,235,0.15);
 }
 
 .lais-primary-role i{
   font-size: 0.8rem;
-  opacity: 0.8;
+  opacity: 0.9;
+  color: #60a5fa;
 }
 
 .lais-primary-role:hover{
-  background: linear-gradient(135deg, rgba(59,130,246,0.35), rgba(139,92,246,0.3));
-  border-color: rgba(59,130,246,0.5);
-  color: #c7d2fe;
+  background: linear-gradient(135deg, rgba(37,99,235,0.4), rgba(59,130,246,0.35));
+  border-color: rgba(37,99,235,0.6);
+  color: #bfdbfe;
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37,99,235,0.25);
 }
 
 .lais-additional-roles{
@@ -217,20 +220,22 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba(139,92,246,0.2), rgba(236,72,153,0.15));
-  color: #c4b5fd;
-  border: 1px solid rgba(139,92,246,0.3);
+  background: linear-gradient(135deg, rgba(59,130,246,0.25), rgba(99,102,241,0.2));
+  color: #a5b4fc;
+  border: 1px solid rgba(59,130,246,0.35);
   font-size: 0.65rem;
   font-weight: 700;
   cursor: help;
   transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(59,130,246,0.15);
 }
 
 .lais-additional-roles:hover{
-  background: linear-gradient(135deg, rgba(139,92,246,0.3), rgba(236,72,153,0.25));
-  border-color: rgba(139,92,246,0.5);
-  color: #ddd6fe;
+  background: linear-gradient(135deg, rgba(59,130,246,0.35), rgba(99,102,241,0.3));
+  border-color: rgba(59,130,246,0.5);
+  color: #c7d2fe;
   transform: scale(1.1);
+  box-shadow: 0 4px 10px rgba(59,130,246,0.25);
 }
 
 .lais-user-action{

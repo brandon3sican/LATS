@@ -21,6 +21,11 @@
             <div class="alert alert-danger">{{ session('error') }}</div>
         @endif
 
+        <div id="resetPasswordAlert" class="alert alert-success d-none">
+            <i class="bi bi-check-circle me-2"></i>
+            <span id="resetPasswordMessage"></span>
+        </div>
+
         {{-- Filters --}}
         <div class="card shadow-sm mb-4">
             <div class="card-body">
@@ -87,11 +92,14 @@
                                     </div>
                                     <div class="mt-1">
                                         @foreach ($emp->user->roles as $role)
-                                            @if ($role->key !== 'employee')
-                                                <span
-                                                    class="badge {{ str_contains($role->key, 'admin') ? 'bg-primary' : 'bg-info text-dark border' }}">
-                                                    {{ strtoupper(str_replace('_', ' ', $role->key)) }}
-                                                </span>
+                                            @if($role->key === 'super_admin')
+                                                <span class="badge bg-danger">SUPER ADMIN</span>
+                                            @elseif($role->key === 'office_admin' || $role->key === 'admin')
+                                                <span class="badge bg-primary">ADMIN</span>
+                                            @elseif(str_contains($role->key, 'approver'))
+                                                <span class="badge bg-warning text-dark">APPROVER</span>
+                                            @elseif($role->key !== 'employee')
+                                                <span class="badge bg-info text-dark">{{ strtoupper(str_replace('_', ' ', $role->key)) }}</span>
                                             @endif
                                         @endforeach
                                     </div>
@@ -104,9 +112,23 @@
                                     @endif
                                 </td>
                                 <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-info view-user-btn"
+                                        data-id="{{ $emp->id }}">
+                                        <i class="bi bi-eye"></i> View
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-warning reset-password-btn"
+                                        data-id="{{ $emp->id }}"
+                                        data-name="{{ $emp->user->first_name }} {{ $emp->user->last_name }}">
+                                        <i class="bi bi-key"></i> Reset
+                                    </button>
                                     <button class="btn btn-sm btn-outline-primary edit-user-btn"
                                         data-id="{{ $emp->id }}">
                                         <i class="bi bi-pencil-square"></i> Edit
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger delete-user-btn"
+                                        data-id="{{ $emp->id }}"
+                                        data-name="{{ $emp->user->first_name }} {{ $emp->user->last_name }}">
+                                        <i class="bi bi-trash"></i> Delete
                                     </button>
                                 </td>
                             </tr>
@@ -242,6 +264,8 @@
                                                     <span class="badge bg-primary">ADMIN</span>
                                                 @elseif(str_contains($role->key, 'approver'))
                                                     <span class="badge bg-warning text-dark">APPROVER</span>
+                                                @else
+                                                    <span class="badge bg-info text-dark">EMPLOYEE</span>
                                                 @endif
                                             </label>
                                         </div>
@@ -258,6 +282,163 @@
             </div>
         </div>
     </div>
+
+    {{-- Password Reset Modal --}}
+    <div class="modal fade" id="resetPasswordModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Reset User Password</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form action="" method="POST" id="resetPasswordForm">
+                    @csrf
+                    <div class="modal-body">
+                        <p>Reset password for <strong id="resetUserName"></strong>?</p>
+                        <p class="text-info small"><i class="bi bi-info-circle me-1"></i>The password will be set to "password".</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-warning">Reset Password</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {{-- Delete Confirmation Modal --}}
+    <div class="modal fade" id="deleteUserModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm User Deletion</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete <strong id="deleteUserName"></strong>?</p>
+                    <p class="text-danger small">This action cannot be undone. The user account and all associated data will be permanently deleted.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <form id="deleteUserForm" method="POST">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="btn btn-danger">Delete User</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- View User Modal --}}
+    <div class="modal fade" id="viewUserModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">User Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="viewUserContent">
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <a id="viewUserFullDetails" href="#" class="btn btn-primary">
+                        <i class="bi bi-eye me-1"></i> View Full Details
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- User details template for modal --}}
+    <template id="userDetailsTemplate">
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header bg-primary text-white">
+                        <h6 class="mb-0"><i class="bi bi-person-circle me-2"></i>Account Information</h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm mb-0">
+                            <tr>
+                                <td class="fw-bold" style="width: 40%">First Name:</td>
+                                <td class="user-first-name"></td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Middle Name:</td>
+                                <td class="user-middle-name"></td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Last Name:</td>
+                                <td class="user-last-name"></td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Full Name:</td>
+                                <td class="user-full-name"></td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Email:</td>
+                                <td class="user-email"></td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Account Status:</td>
+                                <td class="user-status"></td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header bg-success text-white">
+                        <h6 class="mb-0"><i class="bi bi-briefcase me-2"></i>Employment Information</h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm mb-0">
+                            <tr>
+                                <td class="fw-bold" style="width: 40%">Office:</td>
+                                <td class="user-office"></td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Division:</td>
+                                <td class="user-division"></td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Position:</td>
+                                <td class="user-position"></td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Salary Grade:</td>
+                                <td class="user-salary-grade"></td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Sex:</td>
+                                <td class="user-sex"></td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header bg-warning text-dark">
+                <h6 class="mb-0"><i class="bi bi-shield-check me-2"></i>System Roles</h6>
+            </div>
+            <div class="card-body">
+                <div class="row user-roles-container">
+                </div>
+            </div>
+        </div>
+    </template>
 
     <script>
         function filterDivisions() {
@@ -298,42 +479,103 @@
 
         // Store employee data for editing
         const employeesData = @json($employees->items());
-        
+
         document.addEventListener('DOMContentLoaded', function() {
+            // Handle view button clicks
+            document.querySelectorAll('.view-user-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const employeeId = parseInt(this.getAttribute('data-id'));
+                    openViewUserModal(employeeId);
+                });
+            });
+
+            // Handle reset password button clicks
+            document.querySelectorAll('.reset-password-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const employeeId = parseInt(this.getAttribute('data-id'));
+                    const userName = this.getAttribute('data-name');
+
+                    document.getElementById('resetUserName').textContent = userName;
+                    const form = document.getElementById('resetPasswordForm');
+                    form.action = `/super/users/${employeeId}/reset-password`;
+
+                    const modal = new bootstrap.Modal(document.getElementById('resetPasswordModal'));
+                    modal.show();
+                });
+            });
+
+            // Handle password reset form submission
+            document.getElementById('resetPasswordForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                const form = this;
+                const formData = new FormData(form);
+
+                fetch(form.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('resetPasswordModal')).hide();
+                        // Show success alert
+                        const alert = document.getElementById('resetPasswordAlert');
+                        const message = document.getElementById('resetPasswordMessage');
+                        message.textContent = data.message;
+                        alert.classList.remove('d-none');
+
+                        // Hide alert after 5 seconds
+                        setTimeout(() => {
+                            alert.classList.add('d-none');
+                        }, 5000);
+                    } else {
+                        alert(data.message || 'Error resetting password');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error resetting password');
+                });
+            });
+
             // Handle edit button clicks
             document.querySelectorAll('.edit-user-btn').forEach(button => {
                 button.addEventListener('click', function() {
                     const employeeId = parseInt(this.getAttribute('data-id'));
                     const employee = employeesData.find(e => e.id === employeeId);
-                    
+
                     if (employee && employee.user) {
                         const form = document.getElementById('editUserForm');
                         // Set the form action dynamically
                         form.action = `/super/users/${employeeId}`;
-                        
+
                         // Account details
                         document.getElementById('editFirstName').value = employee.user.first_name;
                         document.getElementById('editMiddleName').value = employee.user.middle_name || '';
                         document.getElementById('editLastName').value = employee.user.last_name;
                         document.getElementById('editEmail').value = employee.user.email;
                         document.getElementById('editStatus').value = employee.status;
-                        
+
                         // Employment details
                         document.getElementById('editOfficeId').value = employee.office_id;
                         document.getElementById('editDivisionId').value = employee.division_id || '';
                         document.getElementById('editPositionTitle').value = employee.position_title;
                         document.getElementById('editSalaryGrade').value = employee.salary_grade || '';
                         document.getElementById('editSex').value = employee.sex || '';
-                        
+
                         // Clear password fields
                         document.getElementById('editPassword').value = '';
                         document.getElementById('editPasswordConfirmation').value = '';
-                        
+
                         // Uncheck all roles first
                         document.querySelectorAll('[id^="edit_role_"]').forEach(checkbox => {
                             checkbox.checked = false;
                         });
-                        
+
                         // Check user's roles
                         if (employee.user.roles) {
                             employee.user.roles.forEach(role => {
@@ -343,13 +585,28 @@
                                 }
                             });
                         }
-                        
+
                         // Filter divisions based on selected office
                         filterEditDivisions(false);
-                        
+
                         const modal = new bootstrap.Modal(document.getElementById('editUserModal'));
                         modal.show();
                     }
+                });
+            });
+
+            // Handle delete button clicks
+            document.querySelectorAll('.delete-user-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const employeeId = parseInt(this.getAttribute('data-id'));
+                    const userName = this.getAttribute('data-name');
+
+                    document.getElementById('deleteUserName').textContent = userName;
+                    const form = document.getElementById('deleteUserForm');
+                    form.action = `/super/users/${employeeId}`;
+
+                    const modal = new bootstrap.Modal(document.getElementById('deleteUserModal'));
+                    modal.show();
                 });
             });
         });

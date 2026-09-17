@@ -112,7 +112,8 @@
                                 <div class="col-md-4 mb-2">
                                     <div class="form-check">
                                         <input class="form-check-input" type="checkbox" name="roles[]" value="{{ $role->id }}" id="edit_role_{{ $role->id }}"
-                                        {{ $employee->user->hasRole($role->key) ? 'checked' : '' }}>
+                                        {{ $employee->user->hasRole($role->key) ? 'checked' : '' }}
+                                        {{ $role->key === 'employee' ? 'checked disabled' : '' }}>
                                         <label class="form-check-label" for="edit_role_{{ $role->id }}">
                                             {{ $role->name }}
                                             @if($role->key === 'super_admin')

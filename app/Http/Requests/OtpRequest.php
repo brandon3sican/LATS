@@ -14,15 +14,14 @@ class OtpRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'otp' => 'required|digits:6',
+            'code' => 'required|string',
         ];
     }
 
     public function messages(): array
     {
         return [
-            'otp.required' => 'The OTP code is required.',
-            'otp.digits' => 'The OTP code must be exactly 6 digits.',
+            'code.required' => 'The verification code is required.',
         ];
     }
 }

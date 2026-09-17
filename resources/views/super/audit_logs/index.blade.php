@@ -105,23 +105,43 @@
                         </select>
                     </div>
                     <div class="col-md-1">
-                        <input type="number" name="step_order" class="form-control" placeholder="Step" 
-                               value="{{ request('step_order') }}" min="1">
+                        <select name="step_order" class="form-select">
+                            <option value="">All Steps</option>
+                            <option value="1" {{ request('step_order') == '1' ? 'selected' : '' }}>Step 1</option>
+                            <option value="2" {{ request('step_order') == '2' ? 'selected' : '' }}>Step 2</option>
+                            <option value="3" {{ request('step_order') == '3' ? 'selected' : '' }}>Step 3</option>
+                            <option value="4" {{ request('step_order') == '4' ? 'selected' : '' }}>Step 4</option>
+                        </select>
                     </div>
                     <div class="col-md-2">
-                        <input type="date" name="date_from" class="form-control" placeholder="From" 
+                        <select name="date_filter_type" class="form-select" id="dateFilterType">
+                            <option value="">All Time</option>
+                            <option value="specific" {{ request('date_filter_type') == 'specific' ? 'selected' : '' }}>Specific Dates</option>
+                            <option value="this_week" {{ request('date_filter_type') == 'this_week' ? 'selected' : '' }}>This Week</option>
+                            <option value="this_month" {{ request('date_filter_type') == 'this_month' ? 'selected' : '' }}>This Month</option>
+                            <option value="last_week" {{ request('date_filter_type') == 'last_week' ? 'selected' : '' }}>Last Week</option>
+                            <option value="last_month" {{ request('date_filter_type') == 'last_month' ? 'selected' : '' }}>Last Month</option>
+                            <option value="custom_month" {{ request('date_filter_type') == 'custom_month' ? 'selected' : '' }}>Custom Month</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2" id="specificDates" style="display: {{ request('date_filter_type') == 'specific' ? 'block' : 'none' }};">
+                        <input type="date" name="date_from" class="form-control" placeholder="From"
                                value="{{ request('date_from') }}">
                     </div>
-                    <div class="col-md-2">
-                        <input type="date" name="date_to" class="form-control" placeholder="To" 
+                    <div class="col-md-2" id="specificDatesTo" style="display: {{ request('date_filter_type') == 'specific' ? 'block' : 'none' }};">
+                        <input type="date" name="date_to" class="form-control" placeholder="To"
                                value="{{ request('date_to') }}">
+                    </div>
+                    <div class="col-md-2" id="customMonth" style="display: {{ request('date_filter_type') == 'custom_month' ? 'block' : 'none' }};">
+                        <input type="month" name="custom_month" class="form-control"
+                               value="{{ request('custom_month') }}">
                     </div>
                     <div class="col-md-3">
                         <div class="d-flex gap-2">
                             <button type="submit" class="btn btn-secondary flex-grow-1">
                                 <i class="bi bi-search me-1"></i> Filter
                             </button>
-                            @if(request()->hasAny(['user_id', 'action_type', 'action', 'office_id', 'division_id', 'step_order', 'date_from', 'date_to']))
+                            @if(request()->hasAny(['user_id', 'action_type', 'action', 'office_id', 'division_id', 'step_order', 'date_filter_type', 'date_from', 'date_to', 'custom_month']))
                                 <a href="{{ route('super.audit-logs.index') }}" class="btn btn-outline-secondary">
                                     <i class="bi bi-x-circle"></i>
                                 </a>
@@ -198,7 +218,7 @@
                                     <div class="small text-muted">{{ $log->division ? $log->division->name : '' }}</div>
                                 </td>
                                 <td>
-                                    <div class="small font-monospace">{{ $log->ip_address ?? 'N/A' }}</div>
+                                    <div class="small font-monospace">{{ $log->decrypted_ip_address ?? 'N/A' }}</div>
                                 </td>
                                 <td class="text-end">
                                     <a href="{{ route('super.audit-logs.show', $log->id) }}" class="btn btn-sm btn-outline-primary">
@@ -219,4 +239,34 @@
             </div>
         </div>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const dateFilterType = document.getElementById('dateFilterType');
+            const specificDates = document.getElementById('specificDates');
+            const specificDatesTo = document.getElementById('specificDatesTo');
+            const customMonth = document.getElementById('customMonth');
+
+            function toggleDateFields() {
+                const filterType = dateFilterType.value;
+
+                if (filterType === 'specific') {
+                    specificDates.style.display = 'block';
+                    specificDatesTo.style.display = 'block';
+                    customMonth.style.display = 'none';
+                } else if (filterType === 'custom_month') {
+                    specificDates.style.display = 'none';
+                    specificDatesTo.style.display = 'none';
+                    customMonth.style.display = 'block';
+                } else {
+                    specificDates.style.display = 'none';
+                    specificDatesTo.style.display = 'none';
+                    customMonth.style.display = 'none';
+                }
+            }
+
+            dateFilterType.addEventListener('change', toggleDateFields);
+            toggleDateFields(); // Initialize on page load
+        });
+    </script>
 @endsection

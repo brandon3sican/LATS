@@ -18,7 +18,9 @@ class AuditLogController extends Controller
 
     public function index(Request $request)
     {
-        $query = AuditLog::with(['user', 'office', 'division', 'leaveApplication']);
+        // Only fetch leave-related audit logs
+        $query = AuditLog::with(['user', 'office', 'division', 'leaveApplication'])
+            ->whereIn('action_type', ['creation', 'approval', 'cancellation', 'cancellation_request', 'cancellation_action', 'view']);
 
         // Apply filters
         if ($request->filled('user_id')) {
@@ -45,15 +47,71 @@ class AuditLogController extends Controller
             $query->byStep($request->step_order);
         }
 
-        if ($request->filled('date_from') && $request->filled('date_to')) {
-            $query->byDateRange($request->date_from, $request->date_to);
-        } elseif ($request->filled('date_from')) {
-            $query->whereDate('created_at', '>=', $request->date_from);
-        } elseif ($request->filled('date_to')) {
-            $query->whereDate('created_at', '<=', $request->date_to);
+        // Handle date filtering
+        if ($request->filled('date_filter_type')) {
+            $filterType = $request->date_filter_type;
+
+            switch ($filterType) {
+                case 'specific':
+                    if ($request->filled('date_from') && $request->filled('date_to')) {
+                        $query->byDateRange($request->date_from, $request->date_to);
+                    } elseif ($request->filled('date_from')) {
+                        $query->whereDate('created_at', '>=', $request->date_from);
+                    } elseif ($request->filled('date_to')) {
+                        $query->whereDate('created_at', '<=', $request->date_to);
+                    }
+                    break;
+
+                case 'this_week':
+                    $query->whereBetween('created_at', [
+                        Carbon::now()->startOfWeek(),
+                        Carbon::now()->endOfWeek()
+                    ]);
+                    break;
+
+                case 'this_month':
+                    $query->whereBetween('created_at', [
+                        Carbon::now()->startOfMonth(),
+                        Carbon::now()->endOfMonth()
+                    ]);
+                    break;
+
+                case 'last_week':
+                    $query->whereBetween('created_at', [
+                        Carbon::now()->subWeek()->startOfWeek(),
+                        Carbon::now()->subWeek()->endOfWeek()
+                    ]);
+                    break;
+
+                case 'last_month':
+                    $query->whereBetween('created_at', [
+                        Carbon::now()->subMonth()->startOfMonth(),
+                        Carbon::now()->subMonth()->endOfMonth()
+                    ]);
+                    break;
+
+                case 'custom_month':
+                    if ($request->filled('custom_month')) {
+                        $month = Carbon::parse($request->custom_month . '-01');
+                        $query->whereBetween('created_at', [
+                            $month->startOfMonth(),
+                            $month->endOfMonth()
+                        ]);
+                    }
+                    break;
+            }
+        } else {
+            // Handle legacy date filters if date_filter_type is not set
+            if ($request->filled('date_from') && $request->filled('date_to')) {
+                $query->byDateRange($request->date_from, $request->date_to);
+            } elseif ($request->filled('date_from')) {
+                $query->whereDate('created_at', '>=', $request->date_from);
+            } elseif ($request->filled('date_to')) {
+                $query->whereDate('created_at', '<=', $request->date_to);
+            }
         }
 
-        $auditLogs = $query->recent()->paginate(50)->withQueryString();
+        $auditLogs = $query->recent()->paginate(20)->withQueryString();
 
         // Bottleneck analysis: average time per step
         $bottleneckAnalysis = $this->calculateBottleneckAnalysis($query);
@@ -87,52 +145,92 @@ class AuditLogController extends Controller
 
     public function export(Request $request)
     {
-        $query = AuditLog::with(['user', 'office', 'division', 'leaveApplication']);
+        try {
+            // Only fetch leave-related audit logs
+            $query = AuditLog::with(['user', 'office', 'division', 'leaveApplication'])
+                ->whereIn('action_type', ['creation', 'approval', 'cancellation', 'cancellation_request', 'cancellation_action', 'view']);
 
-        // Apply same filters as index
-        if ($request->filled('user_id')) {
-            $query->byUser($request->user_id);
+            // Apply the same date filtering logic as the index method
+            if ($request->filled('date_filter_type')) {
+                $filterType = $request->date_filter_type;
+
+                switch ($filterType) {
+                    case 'specific':
+                        if ($request->filled('date_from') && $request->filled('date_to')) {
+                            $query->byDateRange($request->date_from, $request->date_to);
+                        } elseif ($request->filled('date_from')) {
+                            $query->whereDate('created_at', '>=', $request->date_from);
+                        } elseif ($request->filled('date_to')) {
+                            $query->whereDate('created_at', '<=', $request->date_to);
+                        }
+                        break;
+
+                    case 'this_week':
+                        $query->whereBetween('created_at', [
+                            Carbon::now()->startOfWeek(),
+                            Carbon::now()->endOfWeek()
+                        ]);
+                        break;
+
+                    case 'this_month':
+                        $query->whereBetween('created_at', [
+                            Carbon::now()->startOfMonth(),
+                            Carbon::now()->endOfMonth()
+                        ]);
+                        break;
+
+                    case 'last_week':
+                        $query->whereBetween('created_at', [
+                            Carbon::now()->subWeek()->startOfWeek(),
+                            Carbon::now()->subWeek()->endOfWeek()
+                        ]);
+                        break;
+
+                    case 'last_month':
+                        $query->whereBetween('created_at', [
+                            Carbon::now()->subMonth()->startOfMonth(),
+                            Carbon::now()->subMonth()->endOfMonth()
+                        ]);
+                        break;
+
+                    case 'custom_month':
+                        if ($request->filled('custom_month')) {
+                            $month = Carbon::parse($request->custom_month . '-01');
+                            $query->whereBetween('created_at', [
+                                $month->startOfMonth(),
+                                $month->endOfMonth()
+                            ]);
+                        }
+                        break;
+                }
+            } else {
+                // Handle legacy date filters if date_filter_type is not set
+                if ($request->filled('date_from') && $request->filled('date_to')) {
+                    $query->byDateRange($request->date_from, $request->date_to);
+                } elseif ($request->filled('date_from')) {
+                    $query->whereDate('created_at', '>=', $request->date_from);
+                } elseif ($request->filled('date_to')) {
+                    $query->whereDate('created_at', '<=', $request->date_to);
+                }
+            }
+
+            $auditLogs = $query->recent()
+                ->limit(100)
+                ->get();
+
+            \Log::info('Audit log export attempt', [
+                'count' => $auditLogs->count(),
+                'first_log' => $auditLogs->first() ? $auditLogs->first()->toArray() : null
+            ]);
+
+            $pdf = Pdf::loadView('super.audit_logs.pdf.index', compact('auditLogs'))
+                ->setPaper('a4', 'landscape');
+
+            return $pdf->stream('audit_logs_' . now()->format('Y_m_d_His') . '.pdf');
+        } catch (\Exception $e) {
+            \Log::error('Audit log export error: ' . $e->getMessage() . ' - Trace: ' . $e->getTraceAsString());
+            return back()->withErrors(['export' => 'Failed to export audit logs: ' . $e->getMessage()]);
         }
-
-        if ($request->filled('action_type')) {
-            $query->byActionType($request->action_type);
-        }
-
-        if ($request->filled('action')) {
-            $query->byAction($request->action);
-        }
-
-        if ($request->filled('office_id')) {
-            $query->byOffice($request->office_id);
-        }
-
-        if ($request->filled('division_id')) {
-            $query->byDivision($request->division_id);
-        }
-
-        if ($request->filled('step_order')) {
-            $query->byStep($request->step_order);
-        }
-
-        if ($request->filled('date_from') && $request->filled('date_to')) {
-            $query->byDateRange($request->date_from, $request->date_to);
-        }
-
-        $auditLogs = $query->recent()->get();
-
-        // Get filter options for display
-        $users = User::orderBy('first_name')->orderBy('last_name')->get();
-        $offices = Office::orderBy('name')->get();
-        $divisions = Division::orderBy('name')->get();
-
-        $pdf = Pdf::loadView('super.audit_logs.pdf.index', compact(
-            'auditLogs',
-            'users',
-            'offices',
-            'divisions'
-        ))->setPaper('a4', 'landscape');
-
-        return $pdf->stream('audit_logs_' . now()->format('Y_m_d_His') . '.pdf');
     }
 
     /**

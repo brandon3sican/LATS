@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Approver;
 use App\Http\Controllers\Controller;
 use App\Models\LeaveApproval;
 use App\Models\LeaveApplication;
-use App\Services\AuditLogService;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -15,12 +14,6 @@ use App\Exports\ApproverMyActionsExport;
 
 class ReportController extends Controller
 {
-    protected AuditLogService $auditLogService;
-
-    public function __construct(AuditLogService $auditLogService)
-    {
-        $this->auditLogService = $auditLogService;
-    }
     public function index()
     {
         return view('approver.reports.index');
@@ -47,15 +40,6 @@ class ReportController extends Controller
             ->orderBy('acted_at', 'desc')
             ->get();
 
-        // Log report view
-        $this->auditLogService->logView(
-            $user,
-            'approval_report',
-            0,
-            "Viewed approval actions report for {$from->format('F Y')}",
-            $request
-        );
-
         return view('approver.reports.my_actions', compact('rows', 'from', 'to'));
     }
 
@@ -68,19 +52,6 @@ class ReportController extends Controller
         $actions = (array) $request->input('action', [
             'approved', 'disapproved', 'returned', 'Approved Cancellation', 'Rejected Cancellation'
         ]);
-
-        // Log Excel export
-        $this->auditLogService->logExport(
-            $user,
-            'approval_actions_report',
-            'Excel',
-            [
-                'from' => $from->format('Y-m-d'),
-                'to' => $to->format('Y-m-d'),
-                'actions' => $actions,
-            ],
-            $request
-        );
 
         return Excel::download(
             new ApproverMyActionsExport($user->id, $from, $to, $actions),
@@ -109,19 +80,6 @@ class ReportController extends Controller
             ->orderBy('acted_at', 'desc')
             ->get();
 
-        // Log PDF export
-        $this->auditLogService->logExport(
-            $user,
-            'approval_actions_report',
-            'PDF',
-            [
-                'from' => $from->format('Y-m-d'),
-                'to' => $to->format('Y-m-d'),
-                'actions' => $actions,
-            ],
-            $request
-        );
-
         $pdf = Pdf::loadView('approver.reports.pdf.my_actions', compact('rows', 'from', 'to'))
             ->setPaper('a4', 'portrait');
 
@@ -139,15 +97,6 @@ class ReportController extends Controller
         ])->findOrFail($id);
 
         abort_if($leave->office_id !== $user->employee->office_id, 403);
-
-        // Log Form 6 access
-        $this->auditLogService->logView(
-            $user,
-            'form6_document',
-            $leave->id,
-            "Accessed Form 6 for leave application #{$leave->id}",
-            $request
-        );
 
         // Check if a cryptographically locked version exists in the vault!
         $lockedPdfPath = storage_path('app/public/locked_leaves/CS_Form_6_' . $leave->id . '.pdf');

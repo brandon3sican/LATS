@@ -17,4 +17,19 @@ class NotificationController extends Controller
 
         return back()->with('status', 'All notifications marked as read.');
     }
+
+    public function markAsRead($id)
+    {
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+
+        $notification = $user->notifications()->findOrFail($id);
+        $notification->markAsRead();
+
+        if (request()->ajax()) {
+            return response()->json(['success' => true]);
+        }
+
+        return back()->with('status', 'Notification marked as read.');
+    }
 }

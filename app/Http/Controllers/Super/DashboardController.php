@@ -30,35 +30,43 @@ class DashboardController extends Controller
 
     public function index(Request $request)
     {
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
         $divisionId = $request->get('division_id');
         
-        $userQuery = User::query();
-        $adminQuery = User::whereHas('roles', fn ($q) => $q->whereIn('key', ['office_admin', 'admin']));
-        
+        $userQuery = Employee::query();
+        $adminQuery = Employee::whereHas('user.roles', fn ($q) => $q->whereIn('key', ['office_admin', 'admin']));
+
         if ($divisionId) {
-            $userQuery->whereHas('employee', function ($q) use ($divisionId) {
-                $q->where('division_id', $divisionId);
-            });
-            $adminQuery->whereHas('employee', function ($q) use ($divisionId) {
-                $q->where('division_id', $divisionId);
-            });
+            $userQuery->where('division_id', $divisionId);
+            $adminQuery->where('division_id', $divisionId);
         }
         
-        // Only calculate efficiency metrics if:
-        // 1. No division is selected (All Divisions), OR
-        // 2. Administrative Division is selected
+        // Only calculate efficiency metrics for super_admin (exempt from division requirement), admin, and approver_chief_personnel with division assigned
+        // and only if: 1. No division is selected (All Divisions), OR 2. Administrative Division is selected
         $efficiencyMetrics = null;
-        $shouldShowMetrics = !$divisionId; // All divisions
+        $shouldShowMetrics = ($user->hasRole('super_admin') || $user->hasRole('admin') || $user->hasRole('approver_chief_personnel')) &&
+                            !$divisionId; // All divisions
         $queryDivisionId = null;
-        
+
+        // Admin and approver_chief_personnel require division assignment, super_admin is exempt
+        if (!$user->hasRole('super_admin') && (!$user->employee || !$user->employee->division_id)) {
+            $shouldShowMetrics = false;
+        }
+
         if ($divisionId) {
             $selectedDivision = Division::find($divisionId);
             if ($selectedDivision && strcasecmp($selectedDivision->name, 'Administrative Division') === 0) {
-                $shouldShowMetrics = true;
+                $shouldShowMetrics = ($user->hasRole('super_admin') || $user->hasRole('admin') || $user->hasRole('approver_chief_personnel'));
                 $queryDivisionId = $divisionId;
+
+                // Admin and approver_chief_personnel require division assignment, super_admin is exempt
+                if (!$user->hasRole('super_admin') && (!$user->employee || !$user->employee->division_id)) {
+                    $shouldShowMetrics = false;
+                }
             }
         }
-        
+
         if ($shouldShowMetrics) {
             $efficiencyMetrics = $this->calculateEfficiencyMetrics($queryDivisionId);
         }

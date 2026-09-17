@@ -5,6 +5,7 @@ use App\Http\Controllers\Controller;
 use App\Models\LeaveAttachment;
 use App\Models\LeaveType;
 use App\Services\LeaveRules\RequiredDocsEvaluator;
+use App\Services\AuditLogService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +17,12 @@ use App\Mail\{LeaveActionRequired, LeaveStatusUpdated};
 
 class LeaveController extends Controller
 {
+    protected AuditLogService $auditLogService;
+
+    public function __construct(AuditLogService $auditLogService)
+    {
+        $this->auditLogService = $auditLogService;
+    }
     public function index(Request $request)
     {
         $user = $request->user()->loadMissing('employee');
@@ -247,6 +254,9 @@ class LeaveController extends Controller
             return $leave;
         });
 
+        // Log leave application creation
+        $this->auditLogService->logLeaveCreation($user, $leave->id, $request);
+
         // -------------------------------------------------------------
         // NOTIFY THE FIRST APPROVER (STEP 1)
         // -------------------------------------------------------------
@@ -341,6 +351,9 @@ class LeaveController extends Controller
         $leave->cancellation_status = 'pending';
         $leave->cancellation_reason = $request->input('cancellation_reason');
         $leave->save();
+
+        // Log cancellation request
+        $this->auditLogService->logCancellationRequest($user, $leave->id, $request->input('cancellation_reason'), $request);
 
         // Email to EMPLOYEE (Confirmation)
         try {

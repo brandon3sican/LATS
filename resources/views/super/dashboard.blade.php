@@ -105,7 +105,7 @@
         @php
             $efficiencyMetrics = $stats['efficiency'] ?? null;
         @endphp
-        @if($efficiencyMetrics)
+        @if($efficiencyMetrics && (auth()->user()->hasRole('super_admin') || auth()->user()->hasRole('admin') || auth()->user()->hasRole('approver_chief_personnel')))
         <h4 class="mb-3 mt-4">Efficiency Metrics</h4>
         <div class="row g-3">
             {{-- Average Approval Time --}}

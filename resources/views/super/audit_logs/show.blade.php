@@ -40,7 +40,7 @@
                                     'dashboard' => 'secondary',
                                     'inbox' => 'warning',
                                     default => 'secondary',
-                                }}">
+                                } }}">
                                     {{ ucfirst($auditLog->action_type) }}
                                 </span>
                             </div>
@@ -57,7 +57,7 @@
                         </div>
                         <div class="mb-3">
                             <label class="small text-muted mb-1">IP Address</label>
-                            <div class="font-monospace">{{ $auditLog->ip_address ?? 'N/A' }}</div>
+                            <div class="font-monospace">{{ $auditLog->decrypted_ip_address ?? 'N/A' }}</div>
                         </div>
                         <div class="mb-3">
                             <label class="small text-muted mb-1">User Agent</label>

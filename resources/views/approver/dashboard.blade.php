@@ -3,8 +3,8 @@
 <div class="container py-4">
     <h3 class="mb-4">Approver Dashboard</h3>
 
-    {{-- DIVISION FILTER (Chief Personnel Only) --}}
-    @if(auth()->user()->hasRole('approver_chief_personnel') && isset($divisions) && $divisions && $divisions->isNotEmpty())
+    {{-- DIVISION FILTER (Chief Personnel, Super Admin, Admin Only) --}}
+    @if((auth()->user()->hasRole('approver_chief_personnel') || auth()->user()->hasRole('super_admin') || auth()->user()->hasRole('admin')) && isset($divisions) && $divisions && $divisions->isNotEmpty())
     <div class="row mb-4">
         <div class="col-12">
             <div class="card shadow-sm border-0">
@@ -118,8 +118,8 @@
         </div>
     </div>
 
-    {{-- EFFICIENCY METRICS ROW (Chief Personnel Only) --}}
-    @if(auth()->user()->hasRole('approver_chief_personnel') && $efficiencyMetrics)
+    {{-- EFFICIENCY METRICS ROW (Super Admin, Admin, Chief Personnel Only) --}}
+    @if((auth()->user()->hasRole('super_admin') || auth()->user()->hasRole('admin') || auth()->user()->hasRole('approver_chief_personnel')) && $efficiencyMetrics)
     <div class="row g-3 mb-4">
         {{-- Average Approval Time --}}
         <div class="col-md-4 col-sm-12">

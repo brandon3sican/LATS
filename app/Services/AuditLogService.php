@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Office;
 use App\Models\Division;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 
 class AuditLogService
 {
@@ -19,7 +20,31 @@ class AuditLogService
     }
 
     /**
-     * Log approval actions with step order
+     * Log leave application creation
+     */
+    public function logLeaveCreation(
+        User $user,
+        int $leaveApplicationId,
+        ?Request $request = null
+    ): AuditLog {
+        $data = [
+            'user_id' => $user->id,
+            'action_type' => 'creation',
+            'action' => 'created',
+            'description' => 'Leave application created',
+            'leave_application_id' => $leaveApplicationId,
+            'details' => [
+                'leave_id' => $leaveApplicationId,
+            ],
+        ];
+
+        $this->addContextualData($data, $user, $request);
+
+        return $this->logAction($data);
+    }
+
+    /**
+     * Log approval actions with step order (only first action per user per leave per step)
      */
     public function logApproval(
         User $user,
@@ -28,7 +53,19 @@ class AuditLogService
         int $stepOrder,
         ?string $remarks = null,
         ?Request $request = null
-    ): AuditLog {
+    ): ?AuditLog {
+        // Check if this user has already taken an approval action on this leave application at this specific step
+        $existingApproval = AuditLog::where('user_id', $user->id)
+            ->where('action_type', 'approval')
+            ->where('leave_application_id', $leaveApplicationId)
+            ->where('step_order', $stepOrder)
+            ->first();
+
+        // If already taken an approval action at this step, don't log again
+        if ($existingApproval) {
+            return null;
+        }
+
         $data = [
             'user_id' => $user->id,
             'action_type' => 'approval',
@@ -48,7 +85,7 @@ class AuditLogService
     }
 
     /**
-     * Log cancellation actions with step order
+     * Log cancellation (when leave application is cancelled)
      */
     public function logCancellation(
         User $user,
@@ -76,54 +113,93 @@ class AuditLogService
     }
 
     /**
-     * Log view actions
+     * Log cancellation request (when employee requests cancellation)
+     */
+    public function logCancellationRequest(
+        User $user,
+        int $leaveApplicationId,
+        ?string $reason = null,
+        ?Request $request = null
+    ): AuditLog {
+        $data = [
+            'user_id' => $user->id,
+            'action_type' => 'cancellation_request',
+            'action' => 'requested_cancellation',
+            'description' => 'Leave application cancellation requested',
+            'leave_application_id' => $leaveApplicationId,
+            'details' => [
+                'reason' => $reason,
+            ],
+        ];
+
+        $this->addContextualData($data, $user, $request);
+
+        return $this->logAction($data);
+    }
+
+    /**
+     * Log cancellation approval/rejection (by personnel)
+     */
+    public function logCancellationAction(
+        User $user,
+        string $action,
+        int $leaveApplicationId,
+        ?string $remarks = null,
+        ?Request $request = null
+    ): AuditLog {
+        $data = [
+            'user_id' => $user->id,
+            'action_type' => 'cancellation_action',
+            'action' => $action,
+            'description' => "Cancellation request {$action}",
+            'leave_application_id' => $leaveApplicationId,
+            'details' => [
+                'remarks' => $remarks,
+            ],
+        ];
+
+        $this->addContextualData($data, $user, $request);
+
+        return $this->logAction($data);
+    }
+
+    /**
+     * Log view actions for leave applications (only first view per user per leave per step)
      */
     public function logView(
         User $user,
-        string $resourceType,
-        int $resourceId,
+        int $leaveApplicationId,
         ?string $description = null,
-        ?Request $request = null
-    ): AuditLog {
+        ?Request $request = null,
+        ?int $stepOrder = null
+    ): ?AuditLog {
+        // Check if this user has already viewed this leave application at this specific step
+        $query = AuditLog::where('user_id', $user->id)
+            ->where('action_type', 'view')
+            ->where('leave_application_id', $leaveApplicationId);
+
+        // If step order is provided, check for views at this specific step
+        if ($stepOrder !== null) {
+            $query->where('step_order', $stepOrder);
+        }
+
+        $existingView = $query->first();
+
+        // If already viewed (at this step if specified), don't log again
+        if ($existingView) {
+            return null;
+        }
+
         $data = [
             'user_id' => $user->id,
             'action_type' => 'view',
             'action' => 'viewed',
-            'description' => $description ?? "Viewed {$resourceType}",
+            'description' => $description ?? "Viewed leave application #{$leaveApplicationId}",
+            'leave_application_id' => $leaveApplicationId,
+            'step_order' => $stepOrder,
             'details' => [
-                'resource_type' => $resourceType,
-                'resource_id' => $resourceId,
-            ],
-        ];
-
-        if ($resourceType === 'leave_application') {
-            $data['leave_application_id'] = $resourceId;
-        }
-
-        $this->addContextualData($data, $user, $request);
-
-        return $this->logAction($data);
-    }
-
-    /**
-     * Log export actions
-     */
-    public function logExport(
-        User $user,
-        string $exportType,
-        ?string $format = null,
-        ?array $filters = null,
-        ?Request $request = null
-    ): AuditLog {
-        $data = [
-            'user_id' => $user->id,
-            'action_type' => 'export',
-            'action' => 'exported',
-            'description' => "Exported {$exportType}" . ($format ? " as {$format}" : ''),
-            'details' => [
-                'export_type' => $exportType,
-                'format' => $format,
-                'filters' => $filters,
+                'leave_id' => $leaveApplicationId,
+                'step_order' => $stepOrder,
             ],
         ];
 
@@ -133,79 +209,7 @@ class AuditLogService
     }
 
     /**
-     * Log dashboard access
-     */
-    public function logDashboardAccess(
-        User $user,
-        ?Request $request = null
-    ): AuditLog {
-        $data = [
-            'user_id' => $user->id,
-            'action_type' => 'dashboard',
-            'action' => 'accessed',
-            'description' => 'Dashboard accessed',
-            'details' => [
-                'user_roles' => $user->roleKeys(),
-            ],
-        ];
-
-        $this->addContextualData($data, $user, $request);
-
-        return $this->logAction($data);
-    }
-
-    /**
-     * Log inbox access
-     */
-    public function logInboxAccess(
-        User $user,
-        ?array $filters = null,
-        ?Request $request = null
-    ): AuditLog {
-        $data = [
-            'user_id' => $user->id,
-            'action_type' => 'inbox',
-            'action' => 'accessed',
-            'description' => 'Inbox accessed',
-            'details' => [
-                'filters' => $filters,
-            ],
-        ];
-
-        $this->addContextualData($data, $user, $request);
-
-        return $this->logAction($data);
-    }
-
-    /**
-     * Log custom actions (for OTP operations, etc.)
-     */
-    public function logCustom(
-        User $user,
-        string $action,
-        string $description,
-        ?array $details = null,
-        ?Request $request = null
-    ): AuditLog {
-        $data = [
-            'user_id' => $user->id,
-            'action_type' => 'custom',
-            'action' => $action,
-            'description' => $description,
-            'details' => $details ?? [],
-        ];
-
-        if ($details && isset($details['leave_id'])) {
-            $data['leave_application_id'] = $details['leave_id'];
-        }
-
-        $this->addContextualData($data, $user, $request);
-
-        return $this->logAction($data);
-    }
-
-    /**
-     * Add contextual data (office, division, IP, user agent)
+     * Add contextual data (office, division, encrypted IP, user agent)
      */
     private function addContextualData(array &$data, User $user, ?Request $request): void
     {
@@ -215,9 +219,9 @@ class AuditLogService
             $data['division_id'] = $user->employee->division_id;
         }
 
-        // Add IP address and user agent if request is provided
+        // Add encrypted IP address and user agent if request is provided
         if ($request) {
-            $data['ip_address'] = $request->ip();
+            $data['ip_address'] = Crypt::encryptString($request->ip());
             $data['user_agent'] = $request->userAgent();
         }
     }
